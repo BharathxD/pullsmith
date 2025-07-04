@@ -1,4 +1,4 @@
-import { timestamp } from "drizzle-orm/pg-core";
+import { timestamp } from "drizzle-orm/mysql-core";
 import { customAlphabet } from "nanoid";
 
 export const timestamps = {

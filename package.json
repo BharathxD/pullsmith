@@ -14,13 +14,17 @@
     "db:introspect": "drizzle-kit introspect"
   },
   "dependencies": {
+    "@octokit/app": "^16.0.1",
+    "@octokit/rest": "^22.0.0",
     "@planetscale/database": "^1.19.0",
     "@radix-ui/react-slot": "^1.2.3",
     "@t3-oss/env-core": "^0.13.8",
+    "@types/jsonwebtoken": "^9.0.10",
     "better-auth": "^1.2.12",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.44.2",
+    "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.525.0",
     "nanoid": "^5.1.5",
     "next": "15.3.5",

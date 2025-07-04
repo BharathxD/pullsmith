@@ -1,12 +1,12 @@
-import { boolean, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, index, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 import { timestamps } from ".";
 
-export const user = pgTable(
+export const user = mysqlTable(
   "user",
   {
-    id: text("id").primaryKey(),
+    id: varchar("id", { length: 255 }).primaryKey(),
     name: text("name").notNull(),
-    email: text("email").notNull().unique(),
+    email: varchar("email", { length: 255 }).notNull().unique(),
     emailVerified: boolean("email_verified").notNull(),
     image: text("image"),
     ...timestamps,
@@ -17,15 +17,15 @@ export const user = pgTable(
   ]
 );
 
-export const session = pgTable(
+export const session = mysqlTable(
   "session",
   {
-    id: text("id").primaryKey(),
+    id: varchar("id", { length: 255 }).primaryKey(),
     expiresAt: timestamp("expires_at").notNull(),
-    token: text("token").notNull().unique(),
-    ipAddress: text("ip_address"),
+    token: varchar("token", { length: 255 }).notNull().unique(),
+    ipAddress: varchar("ip_address", { length: 45 }),
     userAgent: text("user_agent"),
-    userId: text("user_id")
+    userId: varchar("user_id", { length: 255 })
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     ...timestamps,
@@ -40,13 +40,13 @@ export const session = pgTable(
   ]
 );
 
-export const account = pgTable(
+export const account = mysqlTable(
   "account",
   {
-    id: text("id").primaryKey(),
-    accountId: text("account_id").notNull(),
-    providerId: text("provider_id").notNull(),
-    userId: text("user_id")
+    id: varchar("id", { length: 255 }).primaryKey(),
+    accountId: varchar("account_id", { length: 255 }).notNull(),
+    providerId: varchar("provider_id", { length: 255 }).notNull(),
+    userId: varchar("user_id", { length: 255 })
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     accessToken: text("access_token"),
@@ -66,9 +66,9 @@ export const account = pgTable(
   ]
 );
 
-export const verification = pgTable("verification", {
-  id: text("id").primaryKey(),
-  identifier: text("identifier").notNull(),
+export const verification = mysqlTable("verification", {
+  id: varchar("id", { length: 255 }).primaryKey(),
+  identifier: varchar("identifier", { length: 255 }).notNull(),
   value: text("value").notNull(),
   expiresAt: timestamp("expires_at").notNull(),
   ...timestamps,

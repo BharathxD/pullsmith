@@ -7,6 +7,8 @@ export const env = createEnv({
     BETTER_AUTH_SECRET: z.string().min(1),
     GITHUB_CLIENT_ID: z.string().min(1),
     GITHUB_CLIENT_SECRET: z.string().min(1),
+    GITHUB_APP_ID: z.string().min(1),
+    GITHUB_APP_PRIVATE_KEY: z.string().min(1),
   },
 
   /**
@@ -16,7 +18,11 @@ export const env = createEnv({
   clientPrefix: "NEXT_PUBLIC_",
 
   client: {
-    NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000").optional(),
+    NEXT_PUBLIC_APP_URL: z
+      .string()
+      .url()
+      .default("http://localhost:3000")
+      .optional(),
   },
 
   /**
