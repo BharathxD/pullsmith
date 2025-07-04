@@ -35,5 +35,30 @@ services:
     links:
       - pullsmith-mysql
 
+  redis:
+    image: redis/redis-stack-server:6.2.6-v6
+    ports:
+      - "6379:6379"
+    volumes:
+      - pullsmith_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  upstash-redis-http:
+    image: hiett/serverless-redis-http:latest
+    ports:
+      - "8080:80"
+    environment:
+      - SRH_MODE=env
+      - SRH_TOKEN=local_dev_token
+      - SRH_CONNECTION_STRING=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
 volumes:
   pullsmith-mysql:
+  pullsmith_redis:
