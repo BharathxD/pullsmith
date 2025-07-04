@@ -1,3 +1,7 @@
-export default function Home() {
-  return <div>Hello World</div>;
-}
+import { DashboardHome } from "@/components/dashboard-home";
+
+const Home = () => {
+  return <DashboardHome />;
+};
+
+export default Home;
