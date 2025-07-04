@@ -2,7 +2,7 @@
 # This is meant for local development only. Do not use this in production.
 
 services:
-  aider-mysql:
+  pullsmith-mysql:
     image: mysql:8.0
     restart: always
     environment:
@@ -17,7 +17,7 @@ services:
     ports:
       - 3306:3306
     volumes:
-      - aider-mysql:/var/lib/mysql
+      - pullsmith-mysql:/var/lib/mysql
 
   planetscale-proxy:
     image: ghcr.io/mattrobenolt/ps-http-sim:latest
@@ -26,20 +26,14 @@ services:
         "-mysql-no-pass",
         "-listen-port=3900",
         "-mysql-dbname=planetscale",
-        "-mysql-addr=aider-mysql",
+        "-mysql-addr=pullsmith-mysql",
       ]
     depends_on:
-      - aider-mysql
+      - pullsmith-mysql
     ports:
       - 3900:3900
     links:
-      - aider-mysql
-
-  mailhog:
-    image: "mailhog/mailhog:latest"
-    ports:
-      - "1025:1025"
-      - "8025:8025"
+      - pullsmith-mysql
 
 volumes:
-  aider-mysql:
+  pullsmith-mysql:

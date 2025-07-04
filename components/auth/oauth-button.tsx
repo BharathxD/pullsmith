@@ -1,8 +1,8 @@
 "use client";
 
 import { signIn } from "@/lib/auth/client";
-import { Button } from "@workspace/ui/components/button";
-import { toast } from "@workspace/ui/components/sonner";
+import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/sonner";
 import { Loader2 } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -16,7 +16,7 @@ export const OAuthButton = () => {
     try {
       setIsPending(true);
       const response = await signIn.social({
-        provider: "google",
+        provider: "github",
       });
       if (response.error) {
         setIsPending(false);
@@ -35,21 +35,21 @@ export const OAuthButton = () => {
       onClick={handleClick}
       disabled={isPending}
       variant="outline"
-      aria-label="Continue with Google"
+      aria-label="Continue with GitHub"
     >
       {isPending ? (
         <Loader2 className="mr-1 size-4 animate-spin text-muted-foreground" />
       ) : (
         <Image
-          src="/assets/google-logo.svg"
-          alt="Google"
+          src="/assets/github-mark.svg"
+          alt="GitHub"
           priority
           width={16}
           height={16}
           className="mr-1"
         />
       )}
-      Continue with Google
+      Continue with GitHub
     </Button>
   );
 };

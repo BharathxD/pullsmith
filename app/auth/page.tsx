@@ -13,32 +13,7 @@ const AuthPage = async () => {
     <div className="flex h-screen w-screen items-center justify-center">
       <div className="flex max-w-md flex-col gap-4">
         <div className="space-y-2">
-          <h1 className="flex items-center font-semibold text-3xl">
-            Welcome to{" "}
-            <span className="relative ml-2">
-              <span className="absolute inset-y-1/2 h-0.5 w-full bg-black dark:bg-white" />
-              <Image
-                src="/assets/t3chat.svg"
-                alt="T3.Chat"
-                width={76}
-                height={20}
-              />
-            </span>{" "}
-            <span className="ml-2">
-              <Image
-                src="/assets/one-chat-logo.svg"
-                alt="OneChat"
-                width={126}
-                height={25}
-                className="transition-all duration-200 dark:invert"
-              />
-            </span>
-          </h1>
-          <p className="text-lg text-muted-foreground">
-            Access multiple premium AI models including GPT-4.1, Claude, and
-            more. Experience the best AI models in a clean, simple chat
-            interface.
-          </p>
+          <h1 className="text-2xl font-bold">Hey man, welcome to pullsmith</h1>
         </div>
         <OAuthButton />
       </div>
