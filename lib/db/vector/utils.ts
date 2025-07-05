@@ -19,21 +19,20 @@ export const ensureCollectionExists = async (
       "status" in error &&
       error.status === 404
     ) {
-      await Promise.all([
-        client.createCollection(COLLECTION_NAME, {
-          vectors: {
-            size: VECTOR_SIZE,
-            distance: "Cosine",
-          },
-        }),
-        client.createPayloadIndex(COLLECTION_NAME, {
-          field_name: "repositoryId",
-          field_schema: {
-            type: "keyword",
-            is_tenant: true,
-          },
-        }),
-      ]);
+      await client.createCollection(COLLECTION_NAME, {
+        vectors: {
+          size: VECTOR_SIZE,
+          distance: "Cosine",
+        },
+      });
+
+      await client.createPayloadIndex(COLLECTION_NAME, {
+        field_name: "repositoryId",
+        field_schema: {
+          type: "keyword",
+          is_tenant: true,
+        },
+      });
       return;
     }
     throw error;
