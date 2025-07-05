@@ -6,13 +6,20 @@ import { shouldProcessFile } from "./file";
 export interface CodeChunk {
   content: string;
   filePath: string;
+  repositoryId: string;
+  repositoryUrl: string;
   lineStart: number;
   lineEnd: number;
   type: "module";
   metadata: Record<string, unknown>;
 }
 
-export const chunkFile = (content: string, filePath: string): CodeChunk[] => {
+export const chunkFile = (
+  content: string, 
+  filePath: string,
+  repositoryId: string,
+  repositoryUrl: string
+): CodeChunk[] => {
   if (!content || !filePath) return [];
 
   const lines = content.split("\n");
@@ -30,6 +37,8 @@ export const chunkFile = (content: string, filePath: string): CodeChunk[] => {
       chunks.push({
         content: chunkContent,
         filePath,
+        repositoryId,
+        repositoryUrl,
         lineStart: i + 1,
         lineEnd: endIndex,
         type: "module",
@@ -62,7 +71,9 @@ export const prepareChunkForEmbedding = (chunk: CodeChunk): string => {
 
 export const chunkFiles = async (
   repoPath: string,
-  filePaths: string[]
+  filePaths: string[],
+  repositoryId: string,
+  repositoryUrl: string
 ): Promise<CodeChunk[]> => {
   // Process all files in parallel
   const chunkArrays = await Promise.all(
@@ -81,7 +92,7 @@ export const chunkFiles = async (
         const content = await readFile(fullPath, "utf-8");
 
         // Use simple line-based chunking for all files
-        return chunkFile(content, filePath);
+        return chunkFile(content, filePath, repositoryId, repositoryUrl);
       } catch (error) {
         console.warn(`⚠️ Failed to chunk ${filePath}:`, error);
         return [];

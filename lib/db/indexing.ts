@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import db from "./index";
 import { fileHashes, merkleTrees, repositories } from "./schema";
 import { nanoid } from "./schema/utils";
+import { deleteFromVectorDatabase } from "./vector/utils";
 import type { FileHashEntry, MerkleNode } from "../utils/crypto";
 
 export const compareWithPreviousTree = async (
@@ -47,7 +48,7 @@ export const compareWithPreviousTree = async (
     };
   }
 
-  // Get changed files by comparing with previous file hashes
+  // Get changed and deleted files by comparing with previous file hashes
   const changedFiles: string[] = [];
   const deletedFiles: string[] = [];
 
@@ -67,6 +68,8 @@ export const compareWithPreviousTree = async (
         previousFileHashes.map((fh) => [fh.filePath, fh.fileHash])
       );
 
+      const currentFilePathSet = new Set(fileEntries.map((e) => e.filePath));
+
       // Find changed or new files
       for (const entry of fileEntries) {
         const previousHash = previousHashMap.get(entry.filePath);
@@ -76,11 +79,18 @@ export const compareWithPreviousTree = async (
       }
 
       // Find deleted files
-      const currentFilePathSet = new Set(fileEntries.map((e) => e.filePath));
       for (const previousFilePath of previousHashMap.keys()) {
         if (!currentFilePathSet.has(previousFilePath)) {
           deletedFiles.push(previousFilePath);
         }
+      }
+
+      // Clean up vector database for deleted files
+      if (deletedFiles.length > 0) {
+        console.log(
+          `🗑️ Cleaning up ${deletedFiles.length} deleted files from vector database`
+        );
+        await deleteFromVectorDatabase(repositoryRecord.id, deletedFiles);
       }
     } else {
       // No previous tree, index all files

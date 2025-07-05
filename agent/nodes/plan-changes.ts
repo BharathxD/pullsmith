@@ -1,3 +1,4 @@
+import { semanticSearch } from "@/lib/utils/ai";
 import type { AgentState } from "../state";
 
 /**
@@ -11,41 +12,59 @@ export const planChanges = async (
   console.log(`📋 Planning changes for task: ${state.task}`);
 
   try {
-    // For now, this is a placeholder implementation
-    // In a real implementation, this would:
-    // 1. Convert task description into embedding using Vercel AI SDK
-    // 2. Query Qdrant vector database with task embedding
-    // 3. Perform nearest-neighbor search to find relevant code chunks
-    // 4. Collect relevant code chunks with metadata
-    // 5. Generate structured implementation plan using LLM
-    // 6. Break down plan into specific file modifications
+    // Extract repository ID from the indexed files or use a mock
+    // In a real implementation, this would come from the repository record
+    const repositoryId = "mock-repo-id"; // This should come from the indexing stage
 
+    // Perform semantic search with repository filtering
+    console.log("🔍 Performing repository-filtered semantic search...");
+    const semanticMatches = await semanticSearch(
+      state.task,
+      repositoryId,
+      10
+    );
+
+    console.log(`📊 Found ${semanticMatches.length} relevant code chunks`);
+
+    // Extract relevant files from semantic matches
+    const relevantFiles = semanticMatches
+      .map(match => match.payload?.filePath)
+      .filter((filePath): filePath is string => typeof filePath === 'string');
+
+    // For now, create a mock plan based on the semantic matches
+    // In a real implementation, this would use an LLM to generate the plan
     const mockPlan = [
       {
         action: "modify" as const,
-        filePath: "README.md",
-        description: "Update README with task information",
+        filePath: relevantFiles[0] || "README.md",
+        description: `Update based on task: ${state.task}`,
         priority: 1,
       },
     ];
 
-    const mockSemanticMatches = [
-      {
-        content: "Sample code content",
-        filePath: "README.md",
-        lineStart: 1,
-        lineEnd: 10,
-        score: 0.8,
-        metadata: {},
-      },
-    ];
+    // Convert semantic matches to the expected format
+    const formattedSemanticMatches = semanticMatches
+      .filter((match): match is typeof match & { payload: Record<string, unknown> } => 
+        match.payload !== null && match.payload !== undefined && typeof match.payload === 'object'
+      )
+      .map(match => {
+        const payload = match.payload;
+        return {
+          content: String(payload.content || ''),
+          filePath: String(payload.filePath || ''),
+          lineStart: Number(payload.lineStart || 0),
+          lineEnd: Number(payload.lineEnd || 0),
+          score: match.score,
+          metadata: (payload.metadata as Record<string, unknown>) || {},
+        };
+      });
 
-    console.log("✅ Planning complete (placeholder)");
+    console.log("✅ Planning complete with repository isolation");
 
     return {
-      relevantFiles: ["README.md"],
+      relevantFiles,
       plan: mockPlan,
-      semanticMatches: mockSemanticMatches,
+      semanticMatches: formattedSemanticMatches,
       currentStep: "planning_complete",
     };
   } catch (error) {
