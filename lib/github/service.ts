@@ -331,6 +331,33 @@ export class GitHubService {
       throw new Error("Failed to fetch repository details");
     }
   }
+
+  async getInstallationAccessToken(repoUrl: string): Promise<string> {
+    const { owner, repo } = this.parseRepositoryUrl(repoUrl);
+    
+    try {
+      // Get repository installation using the app's main octokit instance
+      const { data: installation } = await this.app.octokit.request('GET /repos/{owner}/{repo}/installation', {
+        owner,
+        repo,
+      });
+
+      // Get installation access token
+      const installationOctokit = await this.app.getInstallationOctokit(installation.id);
+      const auth = await installationOctokit.auth() as { token: string };
+      return auth.token;
+    } catch (error) {
+      throw new Error(`Failed to get installation access token for ${owner}/${repo}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private parseRepositoryUrl(repoUrl: string): { owner: string; repo: string } {
+    const match = repoUrl.match(/github\.com[\/:]([^\/]+)\/([^\/]+?)(?:\.git)?$/);
+    if (!match) {
+      throw new Error(`Invalid repository URL: ${repoUrl}`);
+    }
+    return { owner: match[1], repo: match[2] };
+  }
 }
 
 export const githubService = new GitHubService();

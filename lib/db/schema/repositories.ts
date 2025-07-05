@@ -21,7 +21,7 @@ export const repositories = mysqlTable(
     ...timestamps,
   },
   (table) => [
-    unique("unique_url").on(table.url),
+    unique("unique_url_branch").on(table.url, table.baseBranch),
     index("idx_repositories_updated_at").on(table.updatedAt),
   ]
 );

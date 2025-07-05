@@ -26,13 +26,22 @@ export const ensureCollectionExists = async (
         },
       });
 
-      await client.createPayloadIndex(COLLECTION_NAME, {
-        field_name: "repositoryId",
-        field_schema: {
-          type: "keyword",
-          is_tenant: true,
-        },
-      });
+      await Promise.all([
+        client.createPayloadIndex(COLLECTION_NAME, {
+          field_name: "repositoryId",
+          field_schema: {
+            type: "keyword",
+            is_tenant: true,
+          },
+        }),
+        client.createPayloadIndex(COLLECTION_NAME, {
+          field_name: "baseBranch",
+          field_schema: {
+            type: "keyword",
+          },
+        }),
+      ]);
+      
       return;
     }
     throw error;
@@ -41,7 +50,8 @@ export const ensureCollectionExists = async (
 
 export const storeInVectorDatabase = async (
   embeddings: number[][],
-  chunks: CodeChunk[]
+  chunks: CodeChunk[],
+  baseBranch: string
 ): Promise<void> => {
   if (embeddings.length !== chunks.length) {
     throw new Error(
@@ -53,6 +63,7 @@ export const storeInVectorDatabase = async (
 
   await ensureCollectionExists(client);
 
+  const timestamp = new Date().toISOString();
   const points = embeddings.map((embedding, index) => {
     const chunk = chunks[index];
     if (!chunk) {
@@ -67,11 +78,12 @@ export const storeInVectorDatabase = async (
         filePath: chunk.filePath,
         repositoryId: chunk.repositoryId,
         repositoryUrl: chunk.repositoryUrl,
+        baseBranch,
         lineStart: chunk.lineStart,
         lineEnd: chunk.lineEnd,
         type: chunk.type,
         metadata: chunk.metadata,
-        timestamp: new Date().toISOString(),
+        timestamp,
       },
     };
   });
@@ -89,8 +101,13 @@ export const storeInVectorDatabase = async (
 export const searchVectorDatabase = async (
   queryVector: number[],
   repositoryId: string,
+  baseBranch: string,
   limit = 10
 ) => {
+  if (!queryVector.length || !repositoryId || !baseBranch) {
+    throw new Error("Invalid search parameters");
+  }
+
   const results = await client.search(COLLECTION_NAME, {
     vector: queryVector,
     limit,
@@ -99,6 +116,10 @@ export const searchVectorDatabase = async (
         {
           key: "repositoryId",
           match: { value: repositoryId },
+        },
+        {
+          key: "baseBranch",
+          match: { value: baseBranch },
         },
       ],
     },
@@ -114,26 +135,31 @@ export const searchVectorDatabase = async (
 
 export const deleteFromVectorDatabase = async (
   repositoryId: string,
+  baseBranch: string,
   deletedFilePaths: string[]
 ): Promise<void> => {
-  if (deletedFilePaths.length === 0) return;
+  if (!deletedFilePaths.length || !repositoryId || !baseBranch) return;
 
-  await Promise.all(
-    deletedFilePaths.map((filePath) =>
-      client.delete(COLLECTION_NAME, {
-        filter: {
-          must: [
-            {
-              key: "repositoryId",
-              match: { value: repositoryId },
-            },
-            {
-              key: "filePath",
-              match: { value: filePath },
-            },
-          ],
-        },
-      })
-    )
+  const deletePromises = deletedFilePaths.map((filePath) =>
+    client.delete(COLLECTION_NAME, {
+      filter: {
+        must: [
+          {
+            key: "repositoryId",
+            match: { value: repositoryId },
+          },
+          {
+            key: "baseBranch",
+            match: { value: baseBranch },
+          },
+          {
+            key: "filePath",
+            match: { value: filePath },
+          },
+        ],
+      },
+    })
   );
+
+  await Promise.all(deletePromises);
 };

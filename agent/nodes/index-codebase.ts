@@ -5,6 +5,7 @@ import { buildMerkleTree } from "@/lib/utils/crypto";
 import { cloneRepository } from "@/lib/utils/git";
 import { buildIndexedFilesResult } from "@/lib/utils/indexing";
 import { storeInVectorDatabase } from "@/lib/db/vector/utils";
+import { rm } from "node:fs/promises";
 import type { AgentState } from "../state";
 
 /**
@@ -17,27 +18,28 @@ import type { AgentState } from "../state";
 export const indexCodebase = async (
   state: AgentState
 ): Promise<Partial<AgentState>> => {
-  console.log(`🔍 Starting codebase indexing for ${state.repoUrl}`);
+  let repoPath: string | undefined;
 
   try {
-    // Step 1: Clone repository
-    const { repoPath } = await cloneRepository(state.repoUrl, state.baseBranch);
+    const { repoPath: clonedPath } = await cloneRepository(
+      state.repoUrl,
+      state.baseBranch
+    );
+    repoPath = clonedPath;
 
-    // Step 2: Build current Merkle tree
     const { fileEntries, currentMerkleRoot, merkleTree } =
       await buildMerkleTree(repoPath);
 
-    // Step 3: Compare with previous tree
-    const { repositoryRecord, shouldIndex, changedFiles, deletedFiles } =
+    const { repositoryRecord, shouldIndex, changedFiles } =
       await compareWithPreviousTree(
         state.repoUrl,
+        state.baseBranch,
         state.previousMerkleRoot,
         currentMerkleRoot,
         fileEntries
       );
 
     if (!shouldIndex) {
-      console.log("✅ Codebase unchanged, skipping indexing");
       return {
         merkleRoot: currentMerkleRoot,
         changedFiles: [],
@@ -46,12 +48,6 @@ export const indexCodebase = async (
       };
     }
 
-    console.log(`📝 Found ${changedFiles.length} changed files to index`);
-    if (deletedFiles.length > 0) {
-      console.log(`🗑️ Found ${deletedFiles.length} deleted files (cleaned up)`);
-    }
-
-    // Step 4: Chunk changed files with repository context
     const chunks = await chunkFiles(
       repoPath,
       changedFiles,
@@ -59,28 +55,23 @@ export const indexCodebase = async (
       state.repoUrl
     );
 
-    // Step 5: Generate embeddings
     const embeddings = await generateEmbeddings(chunks);
 
-    // Step 6: Store in vector database
-    await storeInVectorDatabase(embeddings, chunks);
+    await Promise.all([
+      storeInVectorDatabase(embeddings, chunks, state.baseBranch),
+      updateDatabase(
+        repositoryRecord.id,
+        currentMerkleRoot,
+        merkleTree,
+        fileEntries
+      ),
+    ]);
 
-    // Step 7: Update database with new Merkle tree
-    await updateDatabase(
-      repositoryRecord.id,
-      currentMerkleRoot,
-      merkleTree,
-      fileEntries
-    );
-
-    // Step 8: Build indexed files result
     const indexedFiles = await buildIndexedFilesResult(
       changedFiles,
       chunks,
       embeddings
     );
-
-    console.log(`✅ Successfully indexed ${indexedFiles.length} files`);
 
     return {
       indexedFiles,
@@ -90,15 +81,18 @@ export const indexCodebase = async (
       currentStep: "indexing_complete",
     };
   } catch (error) {
-    console.error("❌ Indexing failed:", error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
     return {
-      errors: [
-        ...(state.errors || []),
-        `Indexing failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      ],
+      errors: [...(state.errors || []), `Indexing failed: ${errorMessage}`],
       currentStep: "indexing_failed",
     };
+  } finally {
+    if (repoPath) {
+      rm(repoPath, { recursive: true, force: true }).catch((cleanupError) => {
+        console.warn(
+          `⚠️ Failed to cleanup temporary directory: ${cleanupError}`
+        );
+      });
+    }
   }
 };

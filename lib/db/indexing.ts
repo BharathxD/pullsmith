@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import db from "./index";
 import { fileHashes, merkleTrees, repositories } from "./schema";
 import { nanoid } from "./schema/utils";
@@ -7,6 +7,7 @@ import type { FileHashEntry, MerkleNode } from "../utils/crypto";
 
 export const compareWithPreviousTree = async (
   repoUrl: string,
+  baseBranch: string,
   previousMerkleRoot: string | undefined,
   currentMerkleRoot: string,
   fileEntries: FileHashEntry[]
@@ -16,97 +17,101 @@ export const compareWithPreviousTree = async (
   changedFiles: string[];
   deletedFiles: string[];
 }> => {
-  // Get or create repository record
-  let repositoryRecord = await db.query.repositories.findFirst({
-    where: eq(repositories.url, repoUrl),
-  });
-
-  if (!repositoryRecord) {
-    repositoryRecord = {
-      id: nanoid(),
-      url: repoUrl,
-      name: repoUrl.split("/").pop() || "unknown",
-      baseBranch: "main",
-      currentMerkleRoot: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    await db.insert(repositories).values(repositoryRecord);
-  }
-
-  // Check if we need to index
-  if (
-    previousMerkleRoot === currentMerkleRoot ||
-    repositoryRecord.currentMerkleRoot === currentMerkleRoot
-  ) {
-    return {
-      repositoryRecord,
-      shouldIndex: false,
-      changedFiles: [],
-      deletedFiles: [],
-    };
-  }
-
-  // Get changed and deleted files by comparing with previous file hashes
-  const changedFiles: string[] = [];
-  const deletedFiles: string[] = [];
-
-  if (repositoryRecord.currentMerkleRoot) {
-    // Get previous merkle tree
-    const previousMerkleTree = await db.query.merkleTrees.findFirst({
-      where: eq(merkleTrees.rootHash, repositoryRecord.currentMerkleRoot),
+  try {
+    let repositoryRecord = await db.query.repositories.findFirst({
+      where: and(
+        eq(repositories.url, repoUrl),
+        eq(repositories.baseBranch, baseBranch)
+      ),
     });
 
-    if (previousMerkleTree) {
-      // Get file hashes for the previous merkle tree
-      const previousFileHashes = await db.query.fileHashes.findMany({
-        where: eq(fileHashes.merkleTreeId, previousMerkleTree.id),
+    if (!repositoryRecord) {
+      const newRepo = {
+        id: nanoid(),
+        url: repoUrl,
+        name: `${repoUrl.split("/").pop() || "unknown"}-${baseBranch}`,
+        baseBranch: baseBranch,
+        currentMerkleRoot: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      await db.insert(repositories).values(newRepo);
+      repositoryRecord = newRepo;
+    }
+
+    if (
+      previousMerkleRoot === currentMerkleRoot ||
+      repositoryRecord.currentMerkleRoot === currentMerkleRoot
+    ) {
+      return {
+        repositoryRecord,
+        shouldIndex: false,
+        changedFiles: [],
+        deletedFiles: [],
+      };
+    }
+
+    const changedFiles: string[] = [];
+    const deletedFiles: string[] = [];
+
+    if (repositoryRecord.currentMerkleRoot) {
+      const previousMerkleTree = await db.query.merkleTrees.findFirst({
+        where: eq(merkleTrees.rootHash, repositoryRecord.currentMerkleRoot),
       });
 
-      const previousHashMap = new Map(
-        previousFileHashes.map((fh) => [fh.filePath, fh.fileHash])
-      );
+      const previousFileHashes = previousMerkleTree
+        ? await db.query.fileHashes.findMany({
+            where: eq(fileHashes.merkleTreeId, previousMerkleTree.id),
+          })
+        : [];
 
-      const currentFilePathSet = new Set(fileEntries.map((e) => e.filePath));
-
-      // Find changed or new files
-      for (const entry of fileEntries) {
-        const previousHash = previousHashMap.get(entry.filePath);
-        if (!previousHash || previousHash !== entry.fileHash) {
-          changedFiles.push(entry.filePath);
-        }
-      }
-
-      // Find deleted files
-      for (const previousFilePath of previousHashMap.keys()) {
-        if (!currentFilePathSet.has(previousFilePath)) {
-          deletedFiles.push(previousFilePath);
-        }
-      }
-
-      // Clean up vector database for deleted files
-      if (deletedFiles.length > 0) {
-        console.log(
-          `🗑️ Cleaning up ${deletedFiles.length} deleted files from vector database`
+      if (previousMerkleTree && previousFileHashes.length > 0) {
+        const previousHashMap = new Map(
+          previousFileHashes.map((fh) => [fh.filePath, fh.fileHash])
         );
-        await deleteFromVectorDatabase(repositoryRecord.id, deletedFiles);
+        const currentFilePathSet = new Set(fileEntries.map((e) => e.filePath));
+
+        for (const entry of fileEntries) {
+          const previousHash = previousHashMap.get(entry.filePath);
+          if (!previousHash || previousHash !== entry.fileHash) {
+            changedFiles.push(entry.filePath);
+          }
+        }
+
+        for (const previousFilePath of previousHashMap.keys()) {
+          if (!currentFilePathSet.has(previousFilePath)) {
+            deletedFiles.push(previousFilePath);
+          }
+        }
+
+        if (deletedFiles.length > 0) {
+          await deleteFromVectorDatabase(
+            repositoryRecord.id,
+            baseBranch,
+            deletedFiles
+          );
+        }
+      } else {
+        changedFiles.push(...fileEntries.map((e) => e.filePath));
       }
     } else {
-      // No previous tree, index all files
       changedFiles.push(...fileEntries.map((e) => e.filePath));
     }
-  } else {
-    // No previous indexing, index all files
-    changedFiles.push(...fileEntries.map((e) => e.filePath));
-  }
 
-  return {
-    repositoryRecord,
-    shouldIndex: changedFiles.length > 0 || deletedFiles.length > 0,
-    changedFiles,
-    deletedFiles,
-  };
+    return {
+      repositoryRecord,
+      shouldIndex: changedFiles.length > 0 || deletedFiles.length > 0,
+      changedFiles,
+      deletedFiles,
+    };
+  } catch (error) {
+    throw new Error(
+      `Failed to compare with previous tree: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
 };
 
 export const updateDatabase = async (
@@ -115,42 +120,48 @@ export const updateDatabase = async (
   merkleTree: MerkleNode,
   fileEntries: FileHashEntry[]
 ): Promise<void> => {
-  console.log("💾 Updating database with new Merkle tree");
+  try {
+    await db.transaction(async (tx) => {
+      const merkleTreeId = nanoid();
 
-  // Create new Merkle tree record
-  const merkleTreeId = nanoid();
-  await db.insert(merkleTrees).values({
-    id: merkleTreeId,
-    repositoryId,
-    rootHash: merkleRoot,
-    treeStructure: merkleTree,
-    fileCount: fileEntries.length,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-
-  // Insert file hashes
-  if (fileEntries.length > 0) {
-    await db.insert(fileHashes).values(
-      fileEntries.map((entry) => ({
-        id: nanoid(),
-        merkleTreeId,
-        filePath: entry.filePath,
-        fileHash: entry.fileHash,
-        fileSize: entry.fileSize,
-        lastModified: entry.lastModified,
+      await tx.insert(merkleTrees).values({
+        id: merkleTreeId,
+        repositoryId,
+        rootHash: merkleRoot,
+        treeStructure: merkleTree,
+        fileCount: fileEntries.length,
         createdAt: new Date(),
         updatedAt: new Date(),
-      }))
+      });
+
+      if (fileEntries.length > 0) {
+        await tx.insert(fileHashes).values(
+          fileEntries.map((entry) => ({
+            id: nanoid(),
+            merkleTreeId,
+            filePath: entry.filePath,
+            fileHash: entry.fileHash,
+            fileSize: entry.fileSize,
+            lastModified: entry.lastModified,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          }))
+        );
+      }
+
+      await tx
+        .update(repositories)
+        .set({
+          currentMerkleRoot: merkleRoot,
+          updatedAt: new Date(),
+        })
+        .where(eq(repositories.id, repositoryId));
+    });
+  } catch (error) {
+    throw new Error(
+      `Failed to update database: ${
+        error instanceof Error ? error.message : String(error)
+      }`
     );
   }
-
-  // Update repository with new Merkle root
-  await db
-    .update(repositories)
-    .set({
-      currentMerkleRoot: merkleRoot,
-      updatedAt: new Date(),
-    })
-    .where(eq(repositories.id, repositoryId));
 };

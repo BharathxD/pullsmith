@@ -1,3 +1,5 @@
+import type { Sandbox } from "@vercel/sandbox";
+
 export type FileAction = "modify" | "create" | "delete";
 
 export type Step =
@@ -67,7 +69,6 @@ export interface AgentState {
   // Sandbox stage
   sandboxId: string;
   isSandboxReady: boolean;
-  sandboxInstance?: unknown; // Vercel Sandbox SDK instance
 
   // Editing stage
   editedFiles: EditedFile[];

@@ -12,15 +12,22 @@ export const planChanges = async (
   console.log(`📋 Planning changes for task: ${state.task}`);
 
   try {
-    // Extract repository ID from the indexed files or use a mock
-    // In a real implementation, this would come from the repository record
-    const repositoryId = "mock-repo-id"; // This should come from the indexing stage
+    // Extract repository ID from the indexed files
+    if (!state.indexedFiles?.length) {
+      throw new Error("No indexed files available for planning");
+    }
+    
+    const repositoryId = state.indexedFiles[0].chunks?.[0]?.metadata?.repositoryId as string;
+    if (!repositoryId) {
+      throw new Error("No repository ID found in indexed files");
+    }
 
-    // Perform semantic search with repository filtering
-    console.log("🔍 Performing repository-filtered semantic search...");
+    // Perform semantic search with repository and branch filtering
+    console.log("🔍 Performing repository and branch-filtered semantic search...");
     const semanticMatches = await semanticSearch(
       state.task,
       repositoryId,
+      state.baseBranch,
       10
     );
 
@@ -59,7 +66,7 @@ export const planChanges = async (
         };
       });
 
-    console.log("✅ Planning complete with repository isolation");
+    console.log("✅ Planning complete with repository and branch isolation");
 
     return {
       relevantFiles,

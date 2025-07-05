@@ -1,3 +1,8 @@
+import { githubService } from "@/lib/github/service";
+import { generateSandboxConfig } from "@/lib/utils/ai";
+import { Sandbox } from "@vercel/sandbox";
+import type { CreateSandboxParams } from "@vercel/sandbox/dist/sandbox";
+import ms from "ms";
 import type { AgentState } from "../state";
 
 /**
@@ -8,33 +13,59 @@ import type { AgentState } from "../state";
 export const setupSandbox = async (
   state: AgentState
 ): Promise<Partial<AgentState>> => {
-  console.log(`🚀 Setting up sandbox for ${state.repoUrl}`);
-
   try {
-    // For now, this is a placeholder implementation
-    // In a real implementation, this would:
-    // 1. Generate GitHub App installation access token
-    // 2. Initialize Vercel Sandbox with configuration
-    // 3. Clone repository into sandbox with GitHub App authentication
-    // 4. Configure Git identity for Pullsmith app
-    // 5. Checkout the specified baseBranch
-    // 6. Install project dependencies if needed
+    const [aiConfig, githubToken] = await Promise.all([
+      generateSandboxConfig(state.indexedFiles, state.task),
+      githubService.getInstallationAccessToken(state.repoUrl),
+    ]);
 
-    console.log("✅ Sandbox setup complete (placeholder)");
+    const sandboxConfig: CreateSandboxParams = {
+      source: {
+        url: state.repoUrl,
+        type: "git" as const,
+        username: "x-access-token",
+        password: githubToken,
+      },
+      resources: { vcpus: aiConfig.vcpus },
+      timeout: ms(`${aiConfig.timeoutMinutes}m`),
+      ports: aiConfig.ports,
+      runtime: aiConfig.runtime,
+    };
+
+    const sandbox = await Sandbox.create(sandboxConfig);
+    const branchName = `pullsmith/${state.baseBranch}-${Date.now()}`;
+
+    await Promise.all([
+      sandbox.runCommand({
+        cmd: "git",
+        args: ["config", "user.name", "Pullsmith[bot]"],
+      }),
+      sandbox.runCommand({
+        cmd: "git",
+        args: [
+          "config",
+          "user.email",
+          "pullsmith[bot]@users.noreply.github.com",
+        ],
+      }),
+    ]);
+
+    await sandbox.runCommand({
+      cmd: "git",
+      args: ["checkout", "-b", branchName, state.baseBranch],
+    });
 
     return {
-      sandboxId: `sandbox_${Date.now()}`,
+      sandboxId: sandbox.sandboxId,
       isSandboxReady: true,
       currentStep: "sandbox_ready",
     };
   } catch (error) {
-    console.error("❌ Sandbox setup failed:", error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
     return {
       errors: [
         ...(state.errors || []),
-        `Sandbox setup failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Sandbox setup failed: ${errorMessage}`,
       ],
       currentStep: "sandbox_failed",
     };

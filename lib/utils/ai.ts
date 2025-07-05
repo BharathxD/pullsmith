@@ -1,8 +1,10 @@
 import { createOpenAI } from "@ai-sdk/openai";
-import { embedMany } from "ai";
+import { embedMany, generateObject } from "ai";
 import { prepareChunkForEmbedding, type CodeChunk } from "./chunk";
 import { searchVectorDatabase } from "@/lib/db/vector/utils";
 import { env } from "@/env";
+import { z } from "zod";
+import type { IndexedFile } from "@/agent/state";
 
 const BATCH_SIZE = 100;
 const BATCH_DELAY_MS = 50;
@@ -10,6 +12,15 @@ const BATCH_DELAY_MS = 50;
 const openai = createOpenAI({
   apiKey: env.OPENAI_API_KEY,
 });
+
+const sandboxConfigSchema = z.object({
+  runtime: z.enum(["node22", "python3.13"]),
+  vcpus: z.number().min(0.5).max(8),
+  ports: z.array(z.number()),
+  timeoutMinutes: z.number().min(5).max(45),
+});
+
+export type SandboxConfig = z.infer<typeof sandboxConfigSchema>;
 
 export const generateEmbeddings = async (
   chunks: CodeChunk[]
@@ -45,18 +56,21 @@ export const generateEmbeddings = async (
   return embeddings;
 };
 
+const validateInput = (value: string, name: string) => {
+  if (!value?.trim()) {
+    throw new Error(`${name} cannot be empty`);
+  }
+};
+
 export const semanticSearch = async (
   query: string,
   repositoryId: string,
+  baseBranch: string,
   limit = 10
 ) => {
-  if (!query?.trim()) {
-    throw new Error("Query cannot be empty");
-  }
-
-  if (!repositoryId?.trim()) {
-    throw new Error("Repository ID cannot be empty");
-  }
+  validateInput(query, "Query");
+  validateInput(repositoryId, "Repository ID");
+  validateInput(baseBranch, "Base branch");
 
   const queryEmbedding = await embedMany({
     model: openai.embedding("text-embedding-3-small"),
@@ -66,6 +80,45 @@ export const semanticSearch = async (
   return await searchVectorDatabase(
     queryEmbedding.embeddings[0],
     repositoryId,
+    baseBranch,
     limit
   );
+};
+
+export const generateSandboxConfig = async (
+  indexedFiles: IndexedFile[],
+  task: string
+): Promise<SandboxConfig> => {
+  const projectFiles = indexedFiles
+    .filter(
+      (f) =>
+        f.filePath.includes("package.json") ||
+        f.filePath.includes("requirements.txt") ||
+        f.filePath.includes("pyproject.toml") ||
+        f.filePath.includes("go.mod") ||
+        f.filePath.includes("Dockerfile")
+    )
+    .map((f) => ({ path: f.filePath, content: f.content.slice(0, 2000) }));
+
+  try {
+    const result = await generateObject({
+      model: openai.chat("gpt-4.1-mini"),
+      system: "Analyze the project and determine optimal Vercel Sandbox configuration.",
+      prompt: `Project files: ${JSON.stringify(projectFiles, null, 2)}
+      
+      Task: ${task}
+
+      Determine sandbox configuration for this project.`,
+      schema: sandboxConfigSchema,
+    });
+
+    return result.object;
+  } catch {
+    return {
+      runtime: "node22",
+      vcpus: 1,
+      ports: [3000],
+      timeoutMinutes: 10,
+    };
+  }
 };

@@ -15,6 +15,7 @@ export const env = createEnv({
     QDRANT_API_KEY: z.string().min(1),
     OPENAI_API_KEY: z.string().min(1).startsWith("sk-proj-"),
     QDRANT_URL: z.string().url().optional().default("http://localhost:6333"),
+    VERCEL_OIDC_TOKEN: z.string().min(1),
   },
 
   /**
