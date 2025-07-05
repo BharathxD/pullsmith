@@ -58,6 +58,7 @@ export interface AgentState {
   merkleRoot: string;
   previousMerkleRoot?: string;
   changedFiles: string[];
+  deletedFiles: string[];
 
   // Planning stage
   relevantFiles: string[];

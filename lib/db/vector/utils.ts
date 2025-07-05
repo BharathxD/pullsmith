@@ -8,18 +8,19 @@ const VECTOR_SIZE = 1536;
 const BATCH_SIZE = 100;
 
 export const ensureCollectionExists = async (
-  client: QdrantClient
+  qdrantClient: QdrantClient
 ): Promise<void> => {
   try {
-    await client.getCollection(COLLECTION_NAME);
+    await qdrantClient.getCollection(COLLECTION_NAME);
   } catch (error: unknown) {
-    if (
+    const isNotFoundError =
       error &&
       typeof error === "object" &&
       "status" in error &&
-      error.status === 404
-    ) {
-      await client.createCollection(COLLECTION_NAME, {
+      error.status === 404;
+
+    if (isNotFoundError) {
+      await qdrantClient.createCollection(COLLECTION_NAME, {
         vectors: {
           size: VECTOR_SIZE,
           distance: "Cosine",
@@ -39,9 +40,7 @@ export const storeInVectorDatabase = async (
     throw new Error("Embeddings and chunks arrays must have the same length");
   }
 
-  if (embeddings.length === 0) {
-    return;
-  }
+  if (embeddings.length === 0) return;
 
   await ensureCollectionExists(client);
 
@@ -66,11 +65,38 @@ export const storeInVectorDatabase = async (
     };
   });
 
-  const upsertPromises = [];
+  const batches = [];
   for (let i = 0; i < points.length; i += BATCH_SIZE) {
-    const batch = points.slice(i, i + BATCH_SIZE);
-    upsertPromises.push(client.upsert(COLLECTION_NAME, { points: batch }));
+    batches.push(points.slice(i, i + BATCH_SIZE));
   }
 
-  await Promise.all(upsertPromises);
+  await Promise.all(
+    batches.map((batch) => client.upsert(COLLECTION_NAME, { points: batch }))
+  );
+};
+
+export const deleteFromVectorDatabase = async (
+  filePathsToDelete: string[]
+): Promise<void> => {
+  if (filePathsToDelete.length === 0) return;
+
+  await ensureCollectionExists(client);
+
+  const batches = [];
+  for (let i = 0; i < filePathsToDelete.length; i += BATCH_SIZE) {
+    batches.push(filePathsToDelete.slice(i, i + BATCH_SIZE));
+  }
+
+  await Promise.all(
+    batches.map((batch) =>
+      client.delete(COLLECTION_NAME, {
+        filter: {
+          should: batch.map((filePath) => ({
+            key: "filePath",
+            match: { value: filePath },
+          })),
+        },
+      })
+    )
+  );
 };

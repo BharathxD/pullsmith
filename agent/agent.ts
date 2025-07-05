@@ -23,6 +23,7 @@ export async function runAgent(
     isVectorDatabaseReady: false,
     merkleRoot: "",
     changedFiles: [],
+    deletedFiles: [],
     relevantFiles: [],
     plan: [],
     semanticMatches: [],

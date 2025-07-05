@@ -13,6 +13,7 @@ export const compareWithPreviousTree = async (
   repositoryRecord: { id: string };
   shouldIndex: boolean;
   changedFiles: string[];
+  deletedFiles: string[];
 }> => {
   // Get or create repository record
   let repositoryRecord = await db.query.repositories.findFirst({
@@ -42,11 +43,13 @@ export const compareWithPreviousTree = async (
       repositoryRecord,
       shouldIndex: false,
       changedFiles: [],
+      deletedFiles: [],
     };
   }
 
   // Get changed files by comparing with previous file hashes
   const changedFiles: string[] = [];
+  const deletedFiles: string[] = [];
 
   if (repositoryRecord.currentMerkleRoot) {
     // Get previous merkle tree
@@ -71,6 +74,14 @@ export const compareWithPreviousTree = async (
           changedFiles.push(entry.filePath);
         }
       }
+
+      // Find deleted files
+      const currentFilePathSet = new Set(fileEntries.map((e) => e.filePath));
+      for (const previousFilePath of previousHashMap.keys()) {
+        if (!currentFilePathSet.has(previousFilePath)) {
+          deletedFiles.push(previousFilePath);
+        }
+      }
     } else {
       // No previous tree, index all files
       changedFiles.push(...fileEntries.map((e) => e.filePath));
@@ -82,8 +93,9 @@ export const compareWithPreviousTree = async (
 
   return {
     repositoryRecord,
-    shouldIndex: changedFiles.length > 0,
+    shouldIndex: changedFiles.length > 0 || deletedFiles.length > 0,
     changedFiles,
+    deletedFiles,
   };
 };
 
@@ -131,4 +143,4 @@ export const updateDatabase = async (
       updatedAt: new Date(),
     })
     .where(eq(repositories.id, repositoryId));
-}; 
+};

@@ -4,7 +4,7 @@ import { chunkFiles } from "@/lib/utils/chunk";
 import { buildMerkleTree } from "@/lib/utils/crypto";
 import { cloneRepository } from "@/lib/utils/git";
 import { buildIndexedFilesResult } from "@/lib/utils/indexing";
-import { storeInVectorDatabase } from "@/lib/db/vector/utils";
+import { storeInVectorDatabase, deleteFromVectorDatabase } from "@/lib/db/vector/utils";
 import type { AgentState } from "../state";
 
 /**
@@ -28,7 +28,7 @@ export const indexCodebase = async (
       await buildMerkleTree(repoPath);
 
     // Step 3: Compare with previous tree
-    const { repositoryRecord, shouldIndex, changedFiles } =
+    const { repositoryRecord, shouldIndex, changedFiles, deletedFiles } =
       await compareWithPreviousTree(
         state.repoUrl,
         state.previousMerkleRoot,
@@ -41,23 +41,32 @@ export const indexCodebase = async (
       return {
         merkleRoot: currentMerkleRoot,
         changedFiles: [],
+        deletedFiles: [],
         isVectorDatabaseReady: true,
         currentStep: "indexing_complete",
       };
     }
 
     console.log(`📝 Found ${changedFiles.length} changed files to index`);
+    if (deletedFiles.length > 0) {
+      console.log(`🗑️  Found ${deletedFiles.length} deleted files to remove`);
+    }
 
-    // Step 4: Chunk changed files
+    // Step 4: Clean up deleted files from vector database
+    if (deletedFiles.length > 0) {
+      await deleteFromVectorDatabase(deletedFiles);
+    }
+
+    // Step 5: Chunk changed files
     const chunks = await chunkFiles(repoPath, changedFiles);
 
-    // Step 5: Generate embeddings
+    // Step 6: Generate embeddings
     const embeddings = await generateEmbeddings(chunks);
 
-    // Step 6: Store in vector database
+    // Step 7: Store in vector database
     await storeInVectorDatabase(embeddings, chunks);
 
-    // Step 7: Update database with new Merkle tree
+    // Step 8: Update database with new Merkle tree
     await updateDatabase(
       repositoryRecord.id,
       currentMerkleRoot,
@@ -65,7 +74,7 @@ export const indexCodebase = async (
       fileEntries
     );
 
-    // Step 8: Build indexed files result
+    // Step 9: Build indexed files result
     const indexedFiles = await buildIndexedFilesResult(
       changedFiles,
       chunks,
@@ -73,11 +82,15 @@ export const indexCodebase = async (
     );
 
     console.log(`✅ Successfully indexed ${indexedFiles.length} files`);
+    if (deletedFiles.length > 0) {
+      console.log(`✅ Successfully removed ${deletedFiles.length} deleted files`);
+    }
 
     return {
       indexedFiles,
       merkleRoot: currentMerkleRoot,
       changedFiles,
+      deletedFiles,
       isVectorDatabaseReady: true,
       currentStep: "indexing_complete",
     };
