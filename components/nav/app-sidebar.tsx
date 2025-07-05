@@ -39,8 +39,8 @@ type Repositories =
 
 const AppSidebarLoadingSkeleton = () => (
   <>
-    <div className="px-2.5 py-3 sticky top-0 z-20 bg-white/90 dark:bg-black/80 backdrop-blur-sm">
-      <div className="flex items-center justify-between w-full p-3 bg-white dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-lg">
+    <div className="px-2.5 py-3 sticky top-0 z-20 bg-white/90 dark:bg-neutral-900 backdrop-blur-sm">
+      <div className="flex items-center justify-between w-full p-3 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-lg">
         <div className="flex items-center gap-2">
           <Skeleton className="h-5 w-5 rounded-full bg-neutral-200 dark:bg-neutral-800" />
           <Skeleton className="h-4 w-20 bg-neutral-200 dark:bg-neutral-800" />
@@ -56,7 +56,7 @@ const AppSidebarLoadingSkeleton = () => (
       <SidebarGroupContent className="space-y-1">
         {Array.from({ length: 20 }, () => (
           <SidebarMenuItem key={crypto.randomUUID()}>
-            <div className="flex flex-col items-start gap-1 h-auto rounded-md bg-neutral-50 dark:bg-neutral-900 p-2">
+            <div className="flex flex-col items-start gap-1 h-auto rounded-md bg-neutral-50 dark:bg-neutral-900 p-2 pl-0.5">
               <div className="flex items-center gap-2 w-full">
                 <Skeleton className="h-3 w-3 bg-neutral-200 dark:bg-neutral-800" />
                 <Skeleton className="h-4 w-24 bg-neutral-200 dark:bg-neutral-800" />
@@ -151,7 +151,7 @@ const AppSidebarDataView: React.FC<AppSidebarDataViewProps> = ({
             <SidebarMenuItem key={repo.id}>
               <SidebarMenuButton
                 onClick={() => onRepositoryClick(repo.full_name)}
-                className="flex flex-col items-start gap-1 h-auto pr-2 py-2 hover:bg-neutral-100 dark:hover:bg-neutral-900 rounded-md transition-colors group"
+                className="flex flex-col items-start gap-1 h-auto pr-2 py-2 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-md transition-colors group"
               >
                 <div className="flex items-center gap-2 w-full">
                   <GitBranch className="h-3 w-3 text-neutral-400 dark:text-neutral-600 flex-shrink-0" />
