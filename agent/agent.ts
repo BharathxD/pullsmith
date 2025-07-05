@@ -49,8 +49,6 @@ export async function runAgent(
     const indexResult = await indexCodebase(state);
     state = { ...state, ...indexResult };
 
-    console.log({ ...indexResult });
-
     if (state.currentStep === "indexing_failed") {
       console.log("❌ Indexing failed, stopping execution");
       return state;
