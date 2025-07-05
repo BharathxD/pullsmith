@@ -269,6 +269,68 @@ export class GitHubService {
       throw new Error("Failed to fetch all repositories");
     }
   }
+
+  async getRepositoryDetails(userId: string, owner: string, repo: string) {
+    const octokit = await this.getOctokitForUser(userId);
+
+    try {
+      const [repoResponse, commitsResponse] = await Promise.all([
+        octokit.rest.repos.get({ owner, repo }),
+        octokit.rest.repos.listCommits({ 
+          owner, 
+          repo, 
+          per_page: 5 
+        })
+      ]);
+
+      const repository = repoResponse.data;
+      const commits = commitsResponse.data;
+
+      return {
+        id: repository.id,
+        name: repository.name,
+        full_name: repository.full_name,
+        description: repository.description,
+        private: repository.private,
+        html_url: repository.html_url,
+        clone_url: repository.clone_url,
+        default_branch: repository.default_branch,
+        updated_at: repository.updated_at,
+        pushed_at: repository.pushed_at,
+        language: repository.language,
+        stargazers_count: repository.stargazers_count,
+        forks_count: repository.forks_count,
+        watchers_count: repository.watchers_count,
+        size: repository.size,
+        open_issues_count: repository.open_issues_count,
+        topics: repository.topics,
+        license: repository.license,
+        owner: {
+          login: repository.owner.login,
+          avatar_url: repository.owner.avatar_url,
+          type: repository.owner.type,
+        },
+        recent_commits: commits.map(commit => ({
+          sha: commit.sha,
+          message: commit.commit.message,
+          author: {
+            name: commit.commit.author?.name,
+            email: commit.commit.author?.email,
+            date: commit.commit.author?.date,
+          },
+          committer: {
+            name: commit.commit.committer?.name,
+            email: commit.commit.committer?.email,
+            date: commit.commit.committer?.date,
+          },
+          html_url: commit.html_url,
+        }))
+      };
+    } catch (error) {
+      console.error("Error fetching repository details:", error);
+      throw new Error("Failed to fetch repository details");
+    }
+  }
 }
 
 export const githubService = new GitHubService();

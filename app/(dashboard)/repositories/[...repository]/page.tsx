@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { RepositoryOverview } from "@/components/repository-overview";
 
 interface RepositoryPageProps {
   params: Promise<{
@@ -33,20 +34,7 @@ const RepositoryPage = async ({ params }: RepositoryPageProps) => {
 
   const [owner, repo] = repository;
 
-  return (
-    <div className="container mx-auto py-8 px-4">
-      <div className="space-y-6">
-        <div className="space-y-2">
-          <h1 className="text-3xl font-bold tracking-tight">
-            {owner}/{repo}
-          </h1>
-          <p className="text-muted-foreground">
-            Repository file browser and coding agent workspace
-          </p>
-        </div>
-      </div>
-    </div>
-  );
+  return <RepositoryOverview owner={owner} repo={repo} />;
 };
 
 export default RepositoryPage;

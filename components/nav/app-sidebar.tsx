@@ -14,36 +14,12 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatDateShort, getLanguageColor } from "@/lib/github/utils";
 import { trpc } from "@/lib/trpc/client";
 import { GitBranch, GitFork, Globe, Lock, Star } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-
-const formatDate = (dateString: string | null): string => {
-  if (!dateString) return "Unknown";
-  return new Date(dateString).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  });
-};
-
-const getLanguageColor = (language: string | null): string => {
-  const colors: Record<string, string> = {
-    JavaScript: "bg-yellow-500",
-    TypeScript: "bg-blue-500",
-    Python: "bg-green-500",
-    Java: "bg-red-500",
-    Go: "bg-cyan-500",
-    Rust: "bg-orange-500",
-    "C++": "bg-purple-500",
-    "C#": "bg-blue-600",
-    PHP: "bg-indigo-500",
-    Ruby: "bg-red-600",
-    Swift: "bg-orange-600",
-    Kotlin: "bg-purple-600",
-  };
-  return colors[language || ""] || "bg-neutral-500";
-};
 
 export const AppSidebar = () => {
   const router = useRouter();
@@ -66,15 +42,18 @@ export const AppSidebar = () => {
   }, [repositories, selectedInstallationId]);
 
   const handleRepositoryClick = (fullName: string) =>
-    router.push(`/repo/${fullName.toLowerCase()}`);
+    router.push(`/repositories/${fullName.toLowerCase()}`);
 
   if (isLoading) {
     return (
       <Sidebar variant="sidebar">
         <SidebarHeader className="p-3 border-b">
-          <div className="font-semibold text-xl text-neutral-900">
+          <Link
+            href="/"
+            className="font-semibold text-xl text-neutral-900 hover:text-neutral-700"
+          >
             PullSmith
-          </div>
+          </Link>
           <div className="text-xs text-neutral-500">
             Loading repositories...
           </div>
@@ -148,9 +127,12 @@ export const AppSidebar = () => {
     return (
       <Sidebar variant="sidebar">
         <SidebarHeader className="p-3 border-b">
-          <div className="font-semibold text-xl text-neutral-900">
+          <Link
+            href="/"
+            className="font-semibold text-xl text-neutral-900 hover:text-neutral-700"
+          >
             PullSmith
-          </div>
+          </Link>
         </SidebarHeader>
         <SidebarContent className="p-4">
           <div className="text-sm text-red-600 bg-red-50 p-3 rounded-lg border border-red-200">
@@ -168,7 +150,12 @@ export const AppSidebar = () => {
     return (
       <Sidebar variant="sidebar">
         <SidebarHeader className="p-3 border-b">
-          <div className="font-semibold text-xl text-neutral-900">PullSmith</div>
+          <Link
+            href="/"
+            className="font-semibold text-xl text-neutral-900 hover:text-neutral-700"
+          >
+            PullSmith
+          </Link>
           <div className="text-xs text-neutral-500">
             0 repositories available
           </div>
@@ -180,7 +167,8 @@ export const AppSidebar = () => {
               No repositories found
             </h3>
             <p className="text-sm text-neutral-600 mb-6">
-              To get started, install the PullSmith GitHub app on your repositories to enable AI-powered pull request reviews.
+              To get started, install the PullSmith GitHub app on your
+              repositories to enable AI-powered pull request reviews.
             </p>
             <a
               href="https://github.com/apps/pullsmith"
@@ -203,7 +191,12 @@ export const AppSidebar = () => {
   return (
     <Sidebar variant="sidebar">
       <SidebarHeader className="p-3 border-b">
-        <div className="font-semibold text-xl text-neutral-900">PullSmith</div>
+        <Link
+          href="/"
+          className="font-semibold text-xl text-neutral-900 hover:text-neutral-700"
+        >
+          PullSmith
+        </Link>
         <div className="text-xs text-neutral-500">
           {repositories?.length || 0} repositories available
         </div>
@@ -263,7 +256,7 @@ export const AppSidebar = () => {
                   </div>
 
                   <div className="text-xs text-neutral-500 w-full">
-                    Updated {formatDate(repo.updated_at)}
+                    Updated {formatDateShort(repo.updated_at)}
                   </div>
                 </SidebarMenuButton>
               </SidebarMenuItem>

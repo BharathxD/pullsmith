@@ -74,6 +74,28 @@ export const githubRouter = router({
         input.recursive
       );
     }),
+
+  getRepositoryDetails: protectedProcedure
+    .input(
+      z.object({
+        owner: z.string(),
+        repo: z.string(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const details = await githubService.getRepositoryDetails(
+        ctx.user.id,
+        input.owner,
+        input.repo
+      );
+      return {
+        ...details,
+        recent_commits: details.recent_commits.map((commit) => ({
+          ...commit,
+          url: commit.html_url,
+        })),
+      };
+    }),
 });
 
 export type GitHubRouter = typeof githubRouter;
