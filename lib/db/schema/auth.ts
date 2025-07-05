@@ -1,5 +1,12 @@
-import { boolean, index, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
-import { timestamps } from ".";
+import {
+  boolean,
+  index,
+  mysqlTable,
+  text,
+  timestamp,
+  varchar,
+} from "drizzle-orm/mysql-core";
+import { timestamps } from "./utils";
 
 export const user = mysqlTable(
   "user",

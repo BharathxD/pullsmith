@@ -12,6 +12,9 @@ export const env = createEnv({
     UPSTASH_REDIS_REST_URL: z.string().url(),
     UPSTASH_REDIS_REST_TOKEN: z.string().min(1),
     UPSTASH_REDIS_URL: z.string().url(),
+    QDRANT_API_KEY: z.string().min(1),
+    OPENAI_API_KEY: z.string().min(1).startsWith("sk-proj-"),
+    QDRANT_URL: z.string().url().optional().default("http://localhost:6333"),
   },
 
   /**

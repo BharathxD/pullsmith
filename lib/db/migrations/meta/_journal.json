@@ -15,6 +15,20 @@
       "when": 1751649511074,
       "tag": "0001_adorable_kat_farrell",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1751735211910,
+      "tag": "0002_vengeful_the_executioner",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1751735278958,
+      "tag": "0003_salty_bucky",
+      "breakpoints": true
     }
   ]
 }
