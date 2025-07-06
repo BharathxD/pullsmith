@@ -1,5 +1,5 @@
 import { githubService } from "@/lib/github/service";
-import { generateSandboxConfig } from "@/lib/utils/ai";
+import { generateSandboxConfig } from "@/lib/ai/agents";
 import { Sandbox } from "@vercel/sandbox";
 import type { CreateSandboxParams } from "@vercel/sandbox/dist/sandbox";
 import ms from "ms";

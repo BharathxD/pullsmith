@@ -1,11 +1,54 @@
+import { env } from "@/env";
 import client from "@/lib/db/vector/qdrant";
+import { validateInput } from "@/lib/utils";
+import { createOpenAI } from "@ai-sdk/openai";
 import type { QdrantClient } from "@qdrant/js-client-rest";
+import { embedMany } from "ai";
 import { randomUUID } from "node:crypto";
-import type { CodeChunk } from "../../utils/chunk";
+import { prepareChunkForEmbedding, type CodeChunk } from "../../utils/chunk";
 
 const COLLECTION_NAME = "pullsmith_codebase";
 const VECTOR_SIZE = 1536;
 const BATCH_SIZE = 100;
+const BATCH_DELAY_MS = 50;
+
+const openai = createOpenAI({
+  apiKey: env.OPENAI_API_KEY,
+});
+
+export const generateEmbeddings = async (
+  chunks: CodeChunk[]
+): Promise<number[][]> => {
+  if (!chunks?.length) return [];
+
+  const contents = chunks.map(prepareChunkForEmbedding);
+  const embeddings: number[][] = [];
+
+  for (let i = 0; i < contents.length; i += BATCH_SIZE) {
+    const batch = contents.slice(i, i + BATCH_SIZE);
+    const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+
+    try {
+      const result = await embedMany({
+        model: openai.embedding("text-embedding-3-small"),
+        values: batch,
+      });
+
+      embeddings.push(...result.embeddings);
+
+      if (i + BATCH_SIZE < contents.length) {
+        await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY_MS));
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      throw new Error(
+        `Failed to generate embeddings for batch ${batchNumber}: ${message}`
+      );
+    }
+  }
+
+  return embeddings;
+};
 
 export const ensureCollectionExists = async (
   client: QdrantClient
@@ -41,7 +84,7 @@ export const ensureCollectionExists = async (
           },
         }),
       ]);
-      
+
       return;
     }
     throw error;
@@ -162,4 +205,27 @@ export const deleteFromVectorDatabase = async (
   );
 
   await Promise.all(deletePromises);
+};
+
+export const semanticSearch = async (
+  query: string,
+  repositoryId: string,
+  baseBranch: string,
+  limit = 10
+) => {
+  validateInput(query, "Query");
+  validateInput(repositoryId, "Repository ID");
+  validateInput(baseBranch, "Base branch");
+
+  const queryEmbedding = await embedMany({
+    model: openai.embedding("text-embedding-3-small"),
+    values: [query.trim()],
+  });
+
+  return await searchVectorDatabase(
+    queryEmbedding.embeddings[0],
+    repositoryId,
+    baseBranch,
+    limit
+  );
 };

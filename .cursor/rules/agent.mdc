@@ -145,7 +145,7 @@ The agent processes tasks through the following sequential stages:
 
 ### 3. PLAN CHANGES NODE
 
-**Purpose**: Analyze task and create implementation plan using semantic search
+**Purpose**: Analyze task and create implementation plan using semantic search and LLM-based planning
 
 **Inputs**:
 - `task`: User task description
@@ -154,87 +154,185 @@ The agent processes tasks through the following sequential stages:
 - `merkleRoot`: Current codebase state identifier
 
 **Processing**:
-1. **Query Embedding Generation**:
-   - Convert task description into embedding using Vercel AI SDK
-   - Create semantic representation of the user's intent
-2. **Semantic Search**:
+1. **Enhanced Semantic Search**:
    - Query Qdrant vector database with task embedding
-   - Perform nearest-neighbor search to find relevant code chunks
-   - Retrieve top-k most semantically similar code sections
-3. **Context Assembly**:
+   - Retrieve top-10 most semantically similar code chunks
+   - **Cross-file dependency analysis**: Include related files based on imports/exports
+   - **Hierarchical context building**: Capture file relationships and dependencies
+   - **Multi-modal search**: Combine semantic similarity with file structure analysis
+
+2. **Context Assembly & Analysis**:
    - Collect relevant code chunks with metadata (file paths, line ranges)
-   - Read full content of identified files from indexedFiles
-   - Build comprehensive context of related code patterns
-4. **Plan Generation with LLM**:
-   - Use assembled context with Cursor-style system prompt
-   - Generate structured implementation plan
-   - Consider existing code patterns and conventions
-   - Prioritize changes based on dependencies
-5. **Action Item Creation**:
-   - Break down plan into specific file modifications
-   - Maintain consistency with existing codebase style
-   - Include rationale for each proposed change
+   - **Dependency mapping**: Analyze imports, exports, and function calls
+   - **Impact analysis**: Identify files that might be affected by changes
+   - Build comprehensive context including:
+     - Primary files (direct matches)
+     - Related files (dependencies)
+     - Configuration files (package.json, tsconfig.json, etc.)
+
+3. **LLM-Based Plan Generation** (GitHub Copilot Workspace approach):
+   - **Task-to-Spec-to-Plan workflow**:
+     - Generate specification from task description
+     - Create detailed implementation plan
+     - Break down into prioritized action items
+   - **Structured planning prompt**:
+     ```
+     Given task: {task}
+     Codebase context: {semantic_matches}
+     Dependencies: {file_relationships}
+     
+     Generate a structured plan with:
+     1. Specification of changes needed
+     2. File modification sequence (respecting dependencies)
+     3. Specific actions per file (modify/create/delete)
+     4. Validation steps
+     ```
+   - **Plan structure**:
+     ```typescript
+     interface PlanItem {
+       action: 'modify' | 'create' | 'delete'
+       filePath: string
+       description: string
+       priority: number
+       dependencies: string[] // Other files this depends on
+       changeType: 'implementation' | 'configuration' | 'test'
+       estimatedComplexity: 'low' | 'medium' | 'high'
+     }
+     ```
+
+4. **Dependency-Aware Prioritization**:
+   - **Topological sorting**: Order changes based on dependencies
+   - **Risk assessment**: Prioritize low-risk changes first
+   - **Change impact scoring**: Estimate scope of each modification
 
 **Outputs**:
 - `relevantFiles`: Array of file paths relevant to task
 - `semanticMatches`: Code chunks with similarity scores
-- `plan`: Array of PlanItem objects with actions
+- `plan`: Array of PlanItem objects with dependency-aware ordering
+- `fileRelationships`: Map of file dependencies
 - `currentStep`: 'planning_complete' or 'planning_failed'
 
 **State Updates**:
 - Populates relevantFiles with identified files
 - Stores semantic search results for reference
 - Creates detailed plan with prioritized actions
+- Stores file relationship mapping
 - Adds error to errors array on failure
 
-**Semantic Search Benefits**:
-- Finds conceptually related code, not just text matches
-- Understands code context and relationships
-- Maintains codebase consistency and patterns
-- Enables intelligent refactoring suggestions
+**Implementation Strategy**:
+- **Simple but effective**: Focus on clear plan generation over complex analysis
+- **Dependency-aware**: Respect file relationships for correct ordering
+- **Extensible**: Structure allows for future enhancements
+- **Validation-ready**: Include validation steps in the plan
 
 ---
 
 ### 4. EDIT FILES NODE
 
-**Purpose**: Execute planned changes to code files in Vercel Sandbox
+**Purpose**: Execute planned changes using diff-based editing and validation in Vercel Sandbox
 
 **Inputs**:
-- `plan`: Array of PlanItem objects
+- `plan`: Array of PlanItem objects (dependency-ordered)
 - `indexedFiles`: Original file contents
 - `sandboxId`: Sandbox environment identifier
 - `sandboxInstance`: Sandbox SDK instance
+- `fileRelationships`: File dependency map
 
 **Processing**:
-1. Sort plan items by priority
-2. For each plan item:
-   - Read current file content from sandbox
-   - Generate new content using LLM
-   - Apply changes (modify/create/delete) in sandbox
-   - Execute via `sandboxInstance.runCommand()` or file operations
-3. Validate syntax and basic functionality:
-   - Run linting/formatting commands if configured
-   - Execute type checking for TypeScript projects
-4. Optionally run tests or build commands:
-   - Use `detached: true` for long-running processes
-   - Stream output to monitor progress
-5. Stage all changes using git add
+1. **Dependency-Aware Execution**:
+   - Sort plan items by priority and dependencies
+   - Process items in topological order
+   - Skip items if dependencies failed
+
+2. **Diff-Based File Editing** (Research-backed approach):
+   - **For file modifications**:
+     - Read current file content from sandbox
+     - **Generate targeted diff** using LLM with context:
+       ```
+       Original file: {current_content}
+       Task: {plan_item.description}
+       Context: {relevant_code_chunks}
+       
+       Generate minimal diff to implement the change:
+       - Preserve existing structure
+       - Make targeted modifications
+       - Maintain code style consistency
+       ```
+     - **Apply diff strategically**:
+       - Use line-based diff application
+       - Preserve unchanged code regions
+       - Handle conflicts gracefully
+   
+   - **For file creation**:
+     - Generate complete file content with context
+     - Use existing codebase patterns as templates
+     - Include proper imports and exports
+   
+   - **For file deletion**:
+     - Verify no remaining dependencies
+     - Remove file and update references
+
+3. **Iterative Validation & Refinement**:
+   - **Syntax validation**:
+     - Check syntax after each file modification
+     - For TypeScript: Run `tsc --noEmit` for type checking
+     - For JavaScript: Use ESLint for syntax validation
+   
+   - **Basic functionality validation**:
+     - Attempt to import/require modified files
+     - Check for obvious runtime errors
+   
+   - **Iterative refinement** (if validation fails):
+     - Capture error messages
+     - Retry with error context up to 2 times
+     - Prompt: "Previous attempt failed with error: {error}. Fix the issue:"
+
+4. **Progressive Validation Strategy**:
+   - **Per-file validation**: Validate each file after modification
+   - **Incremental building**: Check compilation after each change
+   - **Rollback capability**: Track changes for potential rollback
+   - **Confidence scoring**: Assess likelihood of success
+
+5. **Sandbox Operations**:
+   - File operations via Sandbox SDK
+   - Command execution with timeout handling
+   - Stream output for long-running processes
+   - Git staging after successful modifications
 
 **Outputs**:
-- `editedFiles`: Array of EditedFile objects
+- `editedFiles`: Array of EditedFile objects with diff metadata
+- `validationResults`: Results of syntax and basic checks
+- `failedItems`: Plan items that couldn't be completed
 - `isEditingComplete`: Boolean flag
 - `currentStep`: 'editing_complete' or 'editing_failed'
 
 **State Updates**:
-- Populates editedFiles with original and new content
+- Populates editedFiles with original/new content and diff information
+- Records validation results for each file
+- Tracks failed items for potential retry
 - Sets isEditingComplete to true on success
-- Adds error to errors array on failure
+- Adds detailed error info to errors array on failure
 
-**Sandbox Operations**:
-- File operations via Sandbox SDK file system methods
-- Command execution with proper error handling
-- Support for streaming output during builds/tests
-- Ability to run development servers for validation
+**Implementation Patterns**:
+- **Diff-first approach**: Generate diffs rather than full file rewrites
+- **Context-aware editing**: Use surrounding code for consistency
+- **Fail-fast validation**: Stop early on critical errors
+- **Graceful degradation**: Continue with other files if one fails
+- **Audit trail**: Maintain detailed logs of all changes
+
+**Error Handling & Recovery**:
+- **Syntax errors**: Retry with error context
+- **Type errors**: Include type information in retry
+- **Import errors**: Check and fix import statements
+- **Dependency errors**: Verify dependency order and retry
+- **Sandbox errors**: Handle timeout and connection issues
+
+**Validation Commands by Language**:
+- **TypeScript**: `tsc --noEmit --project .`
+- **JavaScript**: `eslint --no-eslintrc --config basic {file}`
+- **Python**: `python -m py_compile {file}`
+- **Go**: `go build -o /dev/null {file}`
+- **Rust**: `rustc --emit=dep-info {file}`
 
 ---
 
@@ -289,6 +387,147 @@ The agent processes tasks through the following sequential stages:
 - All commits authored by "Pullsmith[bot]"
 - Uses GitHub App authentication for push operations
 - PR created via GitHub API with App credentials
+
+## Implementation Techniques & Patterns
+
+### LLM Integration Patterns
+
+**Structured Prompting for Code Generation**:
+- **Context-aware prompts**: Include relevant code chunks and file structure
+- **Constraint-based generation**: Specify style, patterns, and architectural constraints
+- **Iterative refinement**: Use compiler feedback for improvement
+- **Confidence assessment**: Evaluate generated code quality
+
+**Prompt Templates**:
+```typescript
+// Planning prompt template
+const PLANNING_PROMPT = `
+Analyze the following task and codebase context:
+
+Task: {task}
+Relevant Code: {semantic_matches}
+File Structure: {file_relationships}
+
+Generate a structured implementation plan with:
+1. High-level specification
+2. File modification sequence
+3. Dependency considerations
+4. Validation strategy
+
+Focus on minimal, targeted changes that preserve existing patterns.
+`;
+
+// Diff generation prompt template
+const DIFF_PROMPT = `
+Original file content:
+{current_content}
+
+Task: {description}
+Context: {relevant_context}
+
+Generate a minimal diff to implement the required changes:
+- Preserve existing code structure
+- Maintain consistent code style
+- Include necessary imports/exports
+- Handle edge cases appropriately
+
+Return only the modified sections with clear before/after markers.
+`;
+```
+
+### Validation & Quality Assurance
+
+**Multi-Layer Validation Pipeline**:
+1. **Syntax validation**: Language-specific syntax checking
+2. **Type validation**: Static type checking for typed languages
+3. **Import/dependency validation**: Verify all imports resolve
+4. **Basic functionality validation**: Test core functionality
+5. **Style consistency validation**: Maintain codebase conventions
+
+**Validation Strategy by Language**:
+- **TypeScript/JavaScript**: ESLint + TypeScript compiler + import analysis
+- **Python**: AST parsing + PyFlakes + import validation
+- **Go**: Go compiler + gofmt + import analysis
+- **Rust**: Rustc + Clippy + Cargo check
+
+**Error Recovery Patterns**:
+- **Iterative refinement**: Retry with error context (max 2 attempts)
+- **Fallback strategies**: Simpler implementations if complex ones fail
+- **Partial success handling**: Continue with other files if one fails
+- **Rollback capability**: Maintain state for potential rollback
+
+### Semantic Search Enhancement
+
+**Context Enrichment Strategies**:
+- **Hierarchical search**: File-level → Function-level → Line-level
+- **Dependency-aware search**: Include related files based on imports
+- **Pattern-based search**: Identify and reuse existing code patterns
+- **Cross-language search**: Handle polyglot codebases effectively
+
+**Search Result Processing**:
+```typescript
+interface EnhancedSemanticMatch {
+  content: string;
+  filePath: string;
+  lineStart: number;
+  lineEnd: number;
+  score: number;
+  context: {
+    surroundingCode: string;
+    imports: string[];
+    exports: string[];
+    dependencies: string[];
+  };
+  metadata: {
+    language: string;
+    fileType: string;
+    lastModified: Date;
+    complexity: 'low' | 'medium' | 'high';
+  };
+}
+```
+
+### Dependency Management
+
+**File Relationship Analysis**:
+- **Static analysis**: Parse imports/exports for dependency graph
+- **Dynamic analysis**: Runtime dependency detection where possible
+- **Circular dependency detection**: Identify and handle cycles
+- **Impact analysis**: Predict change effects across files
+
+**Dependency Resolution Strategies**:
+- **Topological sorting**: Order changes by dependency requirements
+- **Incremental updates**: Process changes in dependency order
+- **Conflict resolution**: Handle competing changes to shared dependencies
+- **Rollback planning**: Maintain dependency state for rollback
+
+### Error Handling & Recovery
+
+**Comprehensive Error Handling**:
+- **Syntax errors**: Parse error messages and suggest fixes
+- **Type errors**: Include type information in error context
+- **Runtime errors**: Capture and analyze execution failures
+- **Integration errors**: Handle API, database, and service failures
+
+**Recovery Strategies**:
+- **Automatic retry**: Retry failed operations with enhanced context
+- **Graceful degradation**: Continue with reduced functionality
+- **Human-in-the-loop**: Surface complex errors for manual resolution
+- **Learning from failures**: Improve future attempts based on error patterns
+
+### Performance Optimization
+
+**Caching Strategies**:
+- **Semantic search caching**: Cache search results for similar queries
+- **Plan caching**: Reuse plans for similar tasks
+- **Validation caching**: Cache validation results for unchanged files
+- **Dependency caching**: Cache dependency analysis results
+
+**Resource Management**:
+- **Sandbox lifecycle**: Efficient creation, usage, and cleanup
+- **Memory management**: Handle large codebases efficiently
+- **Concurrent processing**: Parallel processing where safe
+- **Rate limiting**: Respect API and service limits
 
 ## Sandbox Lifecycle Management
 
@@ -363,6 +602,134 @@ Inspired by [Cursor's codebase indexing approach](https://read.engineerscodex.co
 - **Team Collaboration**: Shared index across team members
 - **Data Integrity**: Cryptographic verification of file states
 - **Scalability**: Handles large codebases efficiently
+
+## 12-Hour Implementation Strategy
+
+### Phase 1: Core Planning Implementation (3 hours)
+**Priority**: Critical - Replace mock planning with actual LLM planning
+
+**Tasks**:
+1. **Implement LLM-based planning** (2 hours):
+   - Create structured planning prompt
+   - Generate PlanItem objects with dependencies
+   - Use semantic search results as context
+   - Implement basic dependency ordering
+
+2. **Enhance semantic search context** (1 hour):
+   - Add file relationship analysis
+   - Include import/export detection
+   - Expand search to include related files
+
+**Success Criteria**:
+- Plan generation produces actionable, ordered tasks
+- Dependencies are correctly identified and ordered
+- Context includes relevant related files
+
+### Phase 2: Diff-Based Editing (4 hours)
+**Priority**: Critical - Replace mock editing with actual file modifications
+
+**Tasks**:
+1. **Implement diff-based file editing** (2.5 hours):
+   - Create diff generation prompts
+   - Implement targeted file modification
+   - Handle file creation/deletion/modification cases
+   - Apply changes via Sandbox SDK
+
+2. **Add basic validation** (1.5 hours):
+   - Implement syntax checking (TypeScript/JavaScript focus)
+   - Add retry logic for failed edits
+   - Basic import/export validation
+
+**Success Criteria**:
+- Files are actually modified in sandbox
+- Syntax errors are caught and retried
+- Changes preserve existing code structure
+
+### Phase 3: Validation & Integration (3 hours)
+**Priority**: High - Ensure code quality and system integration
+
+**Tasks**:
+1. **Implement validation pipeline** (2 hours):
+   - Add TypeScript compiler checking
+   - Implement ESLint validation
+   - Create validation result tracking
+   - Add rollback capability for failed changes
+
+2. **Integration testing** (1 hour):
+   - Test end-to-end flow
+   - Verify sandbox operations
+   - Test with real repositories
+
+**Success Criteria**:
+- Validation catches major issues
+- System works end-to-end
+- Errors are handled gracefully
+
+### Phase 4: Polish & Deployment (2 hours)
+**Priority**: Medium - Refinement and deployment preparation
+
+**Tasks**:
+1. **Error handling refinement** (1 hour):
+   - Improve error messages
+   - Add logging and monitoring
+   - Handle edge cases
+
+2. **Performance optimization** (1 hour):
+   - Add basic caching
+   - Optimize prompt efficiency
+   - Reduce API calls where possible
+
+**Success Criteria**:
+- System handles errors gracefully
+- Performance is acceptable for development use
+- Ready for initial deployment
+
+### Implementation Priorities (If Time Constraints)
+
+**Must Have (MVP)**:
+- LLM-based planning (replace mock)
+- Diff-based file editing (replace mock)
+- Basic syntax validation
+- End-to-end workflow completion
+
+**Should Have (Enhanced)**:
+- Dependency analysis and ordering
+- Retry logic for failed edits
+- Multiple language support
+- Comprehensive error handling
+
+**Could Have (Polish)**:
+- Advanced validation pipeline
+- Performance optimizations
+- Caching strategies
+- Detailed logging and monitoring
+
+**Won't Have (Future)**:
+- Complex multi-agent architectures
+- Advanced AST analysis
+- Machine learning-based optimizations
+- Comprehensive test generation
+
+### Development Guidelines
+
+**Simple but Effective Approach**:
+- Focus on core functionality over advanced features
+- Use straightforward implementations over complex optimizations
+- Prioritize working end-to-end flow over perfect individual components
+- Implement validation incrementally
+
+**Risk Mitigation**:
+- Test each phase before moving to next
+- Maintain working state at each milestone
+- Use feature flags for experimental features
+- Keep rollback plans for major changes
+
+**Success Metrics**:
+- Planning generates actionable tasks (not mock data)
+- Files are actually modified in sandbox
+- Basic validation catches obvious errors
+- End-to-end flow completes successfully
+- System handles common failure cases
 
 ```mermaid
 graph TD

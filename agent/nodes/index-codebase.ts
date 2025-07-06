@@ -1,10 +1,12 @@
 import { compareWithPreviousTree, updateDatabase } from "@/lib/db/indexing";
-import { generateEmbeddings } from "@/lib/utils/ai";
 import { chunkFiles } from "@/lib/utils/chunk";
 import { buildMerkleTree } from "@/lib/utils/crypto";
 import { cloneRepository } from "@/lib/utils/git";
 import { buildIndexedFilesResult } from "@/lib/utils/indexing";
-import { storeInVectorDatabase } from "@/lib/db/vector/utils";
+import {
+  generateEmbeddings,
+  storeInVectorDatabase,
+} from "@/lib/db/vector/utils";
 import { rm } from "node:fs/promises";
 import type { AgentState } from "../state";
 
