@@ -121,22 +121,26 @@ export const updateDatabase = async (
   fileEntries: FileHashEntry[]
 ): Promise<void> => {
   try {
-    await db.transaction(async (tx) => {
-      const merkleTreeId = nanoid();
+    const merkleTreeId = nanoid();
 
-      await tx.insert(merkleTrees).values({
-        id: merkleTreeId,
-        repositoryId,
-        rootHash: merkleRoot,
-        treeStructure: merkleTree,
-        fileCount: fileEntries.length,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+    await db.insert(merkleTrees).values({
+      id: merkleTreeId,
+      repositoryId,
+      rootHash: merkleRoot,
+      treeStructure: merkleTree,
+      fileCount: fileEntries.length,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
 
-      if (fileEntries.length > 0) {
-        await tx.insert(fileHashes).values(
-          fileEntries.map((entry) => ({
+    if (fileEntries.length > 0) {
+      const BATCH_SIZE = 100;
+
+      for (let i = 0; i < fileEntries.length; i += BATCH_SIZE) {
+        const batch = fileEntries.slice(i, i + BATCH_SIZE);
+
+        await db.insert(fileHashes).values(
+          batch.map((entry) => ({
             id: nanoid(),
             merkleTreeId,
             filePath: entry.filePath,
@@ -148,18 +152,81 @@ export const updateDatabase = async (
           }))
         );
       }
+    }
 
-      await tx
-        .update(repositories)
-        .set({
-          currentMerkleRoot: merkleRoot,
-          updatedAt: new Date(),
-        })
-        .where(eq(repositories.id, repositoryId));
-    });
+    await db
+      .update(repositories)
+      .set({
+        currentMerkleRoot: merkleRoot,
+        updatedAt: new Date(),
+      })
+      .where(eq(repositories.id, repositoryId));
   } catch (error) {
+    console.error({ error });
     throw new Error(
       `Failed to update database: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+};
+
+export const getRepositoryId = async (
+  repoUrl: string,
+  baseBranch: string
+): Promise<string | null> => {
+  try {
+    const repositoryRecord = await db.query.repositories.findFirst({
+      where: and(
+        eq(repositories.url, repoUrl),
+        eq(repositories.baseBranch, baseBranch)
+      ),
+    });
+
+    return repositoryRecord?.id || null;
+  } catch (error) {
+    throw new Error(
+      `Failed to get repository ID: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+};
+
+export const getOrCreateRepository = async (
+  repoUrl: string,
+  baseBranch: string
+): Promise<{ id: string; previousMerkleRoot: string | null }> => {
+  try {
+    let repositoryRecord = await db.query.repositories.findFirst({
+      where: and(
+        eq(repositories.url, repoUrl),
+        eq(repositories.baseBranch, baseBranch)
+      ),
+    });
+
+    if (!repositoryRecord) {
+      const newRepo = {
+        id: nanoid(),
+        url: repoUrl,
+        name: `${repoUrl.split("/").pop() || "unknown"}-${baseBranch}`,
+        baseBranch: baseBranch,
+        currentMerkleRoot: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      await db.insert(repositories).values(newRepo);
+      repositoryRecord = newRepo;
+    }
+
+    return {
+      id: repositoryRecord.id,
+      previousMerkleRoot: repositoryRecord.currentMerkleRoot,
+    };
+  } catch (error) {
+    throw new Error(
+      `Failed to get or create repository: ${
         error instanceof Error ? error.message : String(error)
       }`
     );

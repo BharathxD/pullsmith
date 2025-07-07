@@ -3,19 +3,29 @@ import { z } from "zod";
 
 export const env = createEnv({
   server: {
-    DATABASE_URL: z.string().url(),
+    DATABASE_URI: z.string().url(),
     BETTER_AUTH_SECRET: z.string().min(1),
     GITHUB_CLIENT_ID: z.string().min(1),
     GITHUB_CLIENT_SECRET: z.string().min(1),
     GITHUB_APP_ID: z.string().min(1),
     GITHUB_APP_PRIVATE_KEY: z.string().min(1),
-    UPSTASH_REDIS_REST_URL: z.string().url(),
-    UPSTASH_REDIS_REST_TOKEN: z.string().min(1),
-    UPSTASH_REDIS_URL: z.string().url(),
+    REDIS_REST_URL: z.string().url(),
+    REDIS_REST_TOKEN: z.string().min(1),
+    REDIS_URI: z.string().url(),
     QDRANT_API_KEY: z.string().min(1),
     OPENAI_API_KEY: z.string().min(1).startsWith("sk-proj-"),
     QDRANT_URL: z.string().url().optional().default("http://localhost:6333"),
     VERCEL_OIDC_TOKEN: z.string().min(1),
+    LANGGRAPH_API_URL: z
+      .string()
+      .url()
+      .optional()
+      .default("http://localhost:2024"),
+    LANGSMITH_API_KEY: z.string().min(1),
+    NODE_ENV: z
+      .enum(["development", "production"])
+      .optional()
+      .default("development"),
   },
 
   /**

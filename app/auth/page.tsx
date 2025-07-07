@@ -1,7 +1,6 @@
 import { OAuthButton } from "@/components/auth/oauth-button";
 import { auth } from "@/lib/auth/server";
 import { headers } from "next/headers";
-import Image from "next/image";
 import { redirect } from "next/navigation";
 
 const AuthPage = async () => {
@@ -13,7 +12,10 @@ const AuthPage = async () => {
     <div className="flex h-screen w-screen items-center justify-center">
       <div className="flex max-w-md flex-col gap-4">
         <div className="space-y-2">
-          <h1 className="text-2xl font-bold">Hey man, welcome to pullsmith</h1>
+          <h1 className="text-2xl">
+            Welcome to <i>Pullsmith</i>, another tool to fix your broken
+            workflow ✨
+          </h1>
         </div>
         <OAuthButton />
       </div>

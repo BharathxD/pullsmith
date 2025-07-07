@@ -1,28 +1,22 @@
-import { githubService } from "@/lib/github/service";
 import { generateSandboxConfig } from "@/lib/ai/agents";
+import { githubService } from "@/lib/github/service";
 import { Sandbox } from "@vercel/sandbox";
-import type { CreateSandboxParams } from "@vercel/sandbox/dist/sandbox";
 import ms from "ms";
-import type { AgentState } from "../state";
+import type { GraphState } from "../state";
 
-/**
- * SETUP SANDBOX NODE
- *
- * Creates isolated Vercel Sandbox environment with Git-enabled repository access
- */
 export const setupSandbox = async (
-  state: AgentState
-): Promise<Partial<AgentState>> => {
+  state: GraphState
+): Promise<Partial<GraphState>> => {
   try {
     const [aiConfig, githubToken] = await Promise.all([
       generateSandboxConfig(state.indexedFiles, state.task),
       githubService.getInstallationAccessToken(state.repoUrl),
     ]);
 
-    const sandboxConfig: CreateSandboxParams = {
+    const sandbox = await Sandbox.create({
       source: {
         url: state.repoUrl,
-        type: "git" as const,
+        type: "git",
         username: "x-access-token",
         password: githubToken,
       },
@@ -30,10 +24,7 @@ export const setupSandbox = async (
       timeout: ms(`${aiConfig.timeoutMinutes}m`),
       ports: aiConfig.ports,
       runtime: aiConfig.runtime,
-    };
-
-    const sandbox = await Sandbox.create(sandboxConfig);
-    const branchName = `pullsmith/${state.baseBranch}-${Date.now()}`;
+    });
 
     await Promise.all([
       sandbox.runCommand({
@@ -50,11 +41,6 @@ export const setupSandbox = async (
       }),
     ]);
 
-    await sandbox.runCommand({
-      cmd: "git",
-      args: ["checkout", "-b", branchName, state.baseBranch],
-    });
-
     return {
       sandboxId: sandbox.sandboxId,
       isSandboxReady: true,
@@ -62,6 +48,8 @@ export const setupSandbox = async (
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error({ error });
+    console.error("❌ Sandbox setup failed:", errorMessage);
     return {
       errors: [
         ...(state.errors || []),

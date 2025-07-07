@@ -1,17 +1,19 @@
 import {
   boolean,
   index,
-  int,
+  integer,
   json,
-  mysqlTable,
+  pgTable,
   text,
   timestamp,
   varchar,
-} from "drizzle-orm/mysql-core";
+} from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
 import { timestamps } from "./utils";
 import { repositories } from "./repositories";
+import { sandboxInstances } from "./sandbox";
 
-export const agentRuns = mysqlTable(
+export const agentRuns = pgTable(
   "agent_runs",
   {
     id: varchar("id", { length: 255 }).primaryKey(),
@@ -19,25 +21,18 @@ export const agentRuns = mysqlTable(
       .notNull()
       .references(() => repositories.id),
     task: text("task").notNull(),
-    currentStep: varchar("current_step", { length: 50 }).notNull(),
-    status: varchar("status", { length: 20 }).default("running"),
-    merkleRoot: varchar("merkle_root", { length: 64 }),
-    sandboxId: varchar("sandbox_id", { length: 100 }),
-    branchName: varchar("branch_name", { length: 255 }),
-    prUrl: varchar("pr_url", { length: 512 }),
-    commitHash: varchar("commit_hash", { length: 40 }),
-    startedAt: timestamp("started_at").notNull().defaultNow(),
-    completedAt: timestamp("completed_at"),
+    runId: varchar("run_id", { length: 255 }).notNull(),
+    assistantId: varchar("assistant_id", { length: 255 }).notNull(),
+    threadId: varchar("thread_id", { length: 255 }).notNull(),
     ...timestamps,
   },
   (table) => [
-    index("idx_repository_status").on(table.repositoryId, table.status),
-    index("idx_agent_runs_started_at").on(table.startedAt),
-    index("idx_agent_runs_completed_at").on(table.completedAt),
+    index("idx_repository_agent_run").on(table.repositoryId),
+    index("idx_agent_runs_thread_id").on(table.threadId),
   ]
 );
 
-export const planItems = mysqlTable(
+export const planItems = pgTable(
   "plan_items",
   {
     id: varchar("id", { length: 255 }).primaryKey(),
@@ -47,7 +42,7 @@ export const planItems = mysqlTable(
     filePath: varchar("file_path", { length: 1024 }).notNull(),
     actionType: varchar("action_type", { length: 50 }).notNull(),
     description: text("description"),
-    priority: int("priority").default(0),
+    priority: integer("priority").default(0),
     status: varchar("status", { length: 20 }).default("pending"),
     executedAt: timestamp("executed_at"),
     ...timestamps,
@@ -58,7 +53,7 @@ export const planItems = mysqlTable(
   ]
 );
 
-export const editedFiles = mysqlTable(
+export const editedFiles = pgTable(
   "edited_files",
   {
     id: varchar("id", { length: 255 }).primaryKey(),
@@ -82,14 +77,14 @@ export const editedFiles = mysqlTable(
   ]
 );
 
-export const pullRequests = mysqlTable(
+export const pullRequests = pgTable(
   "pull_requests",
   {
     id: varchar("id", { length: 255 }).primaryKey(),
     agentRunId: varchar("agent_run_id", { length: 255 })
       .notNull()
       .references(() => agentRuns.id),
-    prNumber: int("pr_number"),
+    prNumber: integer("pr_number"),
     prUrl: varchar("pr_url", { length: 512 }),
     title: varchar("title", { length: 255 }),
     body: text("body"),
@@ -105,7 +100,7 @@ export const pullRequests = mysqlTable(
   ]
 );
 
-export const agentErrors = mysqlTable(
+export const agentErrors = pgTable(
   "agent_errors",
   {
     id: varchar("id", { length: 255 }).primaryKey(),
@@ -126,7 +121,7 @@ export const agentErrors = mysqlTable(
   ]
 );
 
-export const indexedFiles = mysqlTable(
+export const indexedFiles = pgTable(
   "indexed_files",
   {
     id: varchar("id", { length: 255 }).primaryKey(),
@@ -135,7 +130,7 @@ export const indexedFiles = mysqlTable(
       .references(() => agentRuns.id),
     filePath: varchar("file_path", { length: 1024 }).notNull(),
     fileHash: varchar("file_hash", { length: 64 }).notNull(),
-    chunkCount: int("chunk_count").default(0),
+    chunkCount: integer("chunk_count").default(0),
     embeddingStored: boolean("embedding_stored").default(false),
     indexedAt: timestamp("indexed_at").notNull().defaultNow(),
     ...timestamps,
@@ -147,7 +142,7 @@ export const indexedFiles = mysqlTable(
   ]
 );
 
-export const semanticSearches = mysqlTable(
+export const semanticSearches = pgTable(
   "semantic_searches",
   {
     id: varchar("id", { length: 255 }).primaryKey(),
@@ -161,4 +156,68 @@ export const semanticSearches = mysqlTable(
     ...timestamps,
   },
   (table) => [index("idx_semantic_agent_run").on(table.agentRunId)]
+);
+
+export const agentRunsRelations = relations(agentRuns, ({ one, many }) => ({
+  repository: one(repositories, {
+    fields: [agentRuns.repositoryId],
+    references: [repositories.id],
+  }),
+  planItems: many(planItems),
+  editedFiles: many(editedFiles),
+  pullRequests: many(pullRequests),
+  agentErrors: many(agentErrors),
+  indexedFiles: many(indexedFiles),
+  semanticSearches: many(semanticSearches),
+  sandboxInstances: many(sandboxInstances),
+}));
+
+export const planItemsRelations = relations(planItems, ({ one, many }) => ({
+  agentRun: one(agentRuns, {
+    fields: [planItems.agentRunId],
+    references: [agentRuns.id],
+  }),
+  editedFiles: many(editedFiles),
+}));
+
+export const editedFilesRelations = relations(editedFiles, ({ one }) => ({
+  agentRun: one(agentRuns, {
+    fields: [editedFiles.agentRunId],
+    references: [agentRuns.id],
+  }),
+  planItem: one(planItems, {
+    fields: [editedFiles.planItemId],
+    references: [planItems.id],
+  }),
+}));
+
+export const pullRequestsRelations = relations(pullRequests, ({ one }) => ({
+  agentRun: one(agentRuns, {
+    fields: [pullRequests.agentRunId],
+    references: [agentRuns.id],
+  }),
+}));
+
+export const agentErrorsRelations = relations(agentErrors, ({ one }) => ({
+  agentRun: one(agentRuns, {
+    fields: [agentErrors.agentRunId],
+    references: [agentRuns.id],
+  }),
+}));
+
+export const indexedFilesRelations = relations(indexedFiles, ({ one }) => ({
+  agentRun: one(agentRuns, {
+    fields: [indexedFiles.agentRunId],
+    references: [agentRuns.id],
+  }),
+}));
+
+export const semanticSearchesRelations = relations(
+  semanticSearches,
+  ({ one }) => ({
+    agentRun: one(agentRuns, {
+      fields: [semanticSearches.agentRunId],
+      references: [agentRuns.id],
+    }),
+  })
 );

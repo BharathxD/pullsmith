@@ -1,14 +1,15 @@
 import { compareWithPreviousTree, updateDatabase } from "@/lib/db/indexing";
-import { chunkFiles } from "@/lib/utils/chunk";
-import { buildMerkleTree } from "@/lib/utils/crypto";
-import { cloneRepository } from "@/lib/utils/git";
-import { buildIndexedFilesResult } from "@/lib/utils/indexing";
 import {
   generateEmbeddings,
   storeInVectorDatabase,
 } from "@/lib/db/vector/utils";
+import { chunkFiles } from "@/lib/utils/chunk";
+import { buildMerkleTree } from "@/lib/utils/crypto";
+import { cloneRepository } from "@/lib/utils/git";
+import { buildIndexedFilesResult } from "@/lib/utils/indexing";
+import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { rm } from "node:fs/promises";
-import type { AgentState } from "../state";
+import type { GraphState } from "../state";
 
 /**
  * INDEX CODEBASE NODE
@@ -18,8 +19,9 @@ import type { AgentState } from "../state";
  * Language-agnostic: processes all text files the same way.
  */
 export const indexCodebase = async (
-  state: AgentState
-): Promise<Partial<AgentState>> => {
+  state: GraphState,
+  config: LangGraphRunnableConfig
+): Promise<Partial<GraphState>> => {
   let repoPath: string | undefined;
 
   try {

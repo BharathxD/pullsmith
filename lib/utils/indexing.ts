@@ -1,12 +1,12 @@
 import { nanoid } from "../db/schema/utils";
 import type { CodeChunk } from "./chunk";
-import type { AgentState } from "../../agent/state";
+import type { GraphState } from "../../agent/state";
 
 export const buildIndexedFilesResult = async (
   changedFiles: string[],
   chunks: CodeChunk[],
   embeddings: number[][]
-): Promise<AgentState["indexedFiles"]> => {
+): Promise<GraphState["indexedFiles"]> => {
   if (chunks.length !== embeddings.length) {
     throw new Error("Chunks and embeddings arrays must have the same length");
   }
@@ -36,7 +36,7 @@ export const buildIndexedFilesResult = async (
     }
   });
 
-  const indexedFiles: AgentState["indexedFiles"] = [];
+  const indexedFiles: GraphState["indexedFiles"] = [];
 
   for (const [filePath, fileData] of fileDataMap) {
     const fileChunks = fileData.chunks.map((chunk, index) => ({

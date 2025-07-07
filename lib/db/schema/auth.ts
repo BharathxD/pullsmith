@@ -1,14 +1,14 @@
 import {
   boolean,
   index,
-  mysqlTable,
+  pgTable,
   text,
   timestamp,
   varchar,
-} from "drizzle-orm/mysql-core";
+} from "drizzle-orm/pg-core";
 import { timestamps } from "./utils";
 
-export const user = mysqlTable(
+export const user = pgTable(
   "user",
   {
     id: varchar("id", { length: 255 }).primaryKey(),
@@ -24,7 +24,7 @@ export const user = mysqlTable(
   ]
 );
 
-export const session = mysqlTable(
+export const session = pgTable(
   "session",
   {
     id: varchar("id", { length: 255 }).primaryKey(),
@@ -47,7 +47,7 @@ export const session = mysqlTable(
   ]
 );
 
-export const account = mysqlTable(
+export const account = pgTable(
   "account",
   {
     id: varchar("id", { length: 255 }).primaryKey(),
@@ -73,7 +73,7 @@ export const account = mysqlTable(
   ]
 );
 
-export const verification = mysqlTable("verification", {
+export const verification = pgTable("verification", {
   id: varchar("id", { length: 255 }).primaryKey(),
   identifier: varchar("identifier", { length: 255 }).notNull(),
   value: text("value").notNull(),

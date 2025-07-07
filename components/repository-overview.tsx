@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { formatTimeAgo, getLanguageColor } from "@/lib/github/utils";
 import { trpc } from "@/lib/trpc/client";
 import { cn } from "@/lib/utils";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   ArrowRight,
   Bug,
@@ -235,6 +237,7 @@ interface TaskInputProps {
   setTaskInput: (value: string) => void;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   onSubmit: () => void;
+  isSubmitting?: boolean;
 }
 
 const TaskInput = ({
@@ -242,6 +245,7 @@ const TaskInput = ({
   setTaskInput,
   textareaRef,
   onSubmit,
+  isSubmitting = false,
 }: TaskInputProps) => (
   <form
     className={cn(
@@ -254,6 +258,7 @@ const TaskInput = ({
       placeholder={TEXTAREA_CONFIG.placeholder}
       value={taskInput}
       onChange={(e) => setTaskInput(e.target.value)}
+      disabled={isSubmitting}
       style={{
         minHeight: TEXTAREA_CONFIG.minHeight,
         maxHeight: TEXTAREA_CONFIG.maxHeight,
@@ -266,7 +271,7 @@ const TaskInput = ({
         size="icon"
         className="rounded-md bg-neutral-900 text-white transition-all duration-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50 shadow-xs dark:bg-neutral-50 dark:text-neutral-900 dark:hover:bg-neutral-200"
         onClick={onSubmit}
-        disabled={!taskInput.trim()}
+        disabled={!taskInput.trim() || isSubmitting}
       >
         <ArrowRight className="size-4" />
       </Button>
@@ -319,15 +324,37 @@ export const RepositoryOverview = ({
   repo,
 }: RepositoryOverviewProps) => {
   const [taskInput, setTaskInput] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { open: sidebarOpen } = useSidebar();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const router = useRouter();
 
   const { data: repositoryData, isLoading: isLoadingRepo } =
     trpc.github.getRepositoryDetails.useQuery({ owner, repo });
 
-  const handleTaskSubmit = () => {
-    // TODO: Implement task processing
-    console.log("Starting work on:", taskInput);
+  const createTaskMutation = trpc.agent.createTask.useMutation({
+    onSuccess: (data) => {
+      toast.success("Task started successfully");
+      router.push(`/tasks/${data.taskId}`);
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to start task");
+      setIsSubmitting(false);
+    },
+  });
+
+  const handleTaskSubmit = async () => {
+    if (!taskInput.trim() || isSubmitting) return;
+    
+    setIsSubmitting(true);
+    
+    const repoUrl = `https://github.com/${owner}/${repo}`;
+    
+    createTaskMutation.mutate({
+      task: taskInput.trim(),
+      repoUrl,
+      baseBranch: "main",
+    });
   };
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: Auto-resize textarea
@@ -377,6 +404,7 @@ export const RepositoryOverview = ({
           setTaskInput={setTaskInput}
           textareaRef={textareaRef}
           onSubmit={handleTaskSubmit}
+          isSubmitting={isSubmitting}
         />
 
         {/* Example prompts */}

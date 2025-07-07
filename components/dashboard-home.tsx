@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import { AppSidebarEmptyState } from "./nav/app-sidebar";
 
 interface Repository {
   id: number;
@@ -422,11 +423,15 @@ export const DashboardHome = () => {
           accounts={accounts}
           isLoading={isLoading}
         />
-        <RecentRepositories
-          repositories={recentRepositories}
-          isLoading={isLoading}
-        />
-        <ConnectedAccounts accounts={accounts} isLoading={isLoading} />
+        {Object.keys(accounts).length > 0 && (
+          <>
+            <RecentRepositories
+              repositories={recentRepositories}
+              isLoading={isLoading}
+            />
+            <ConnectedAccounts accounts={accounts} isLoading={isLoading} />
+          </>
+        )}
       </div>
     </main>
   );

@@ -99,7 +99,9 @@ export const generatePlan = async (
 
   try {
     const result = await generateText({
-      model: openai.chat(PLAN_GENERATION_CONFIG.model),
+      model: openai.chat(PLAN_GENERATION_CONFIG.model, {
+        structuredOutputs: false,
+      }),
       system: systemPrompt,
       prompt: `Task: ${task}
 
@@ -112,7 +114,10 @@ export const generatePlan = async (
       - Start with broad exploration to understand the overall system
       - Use parallel tool calls when possible for faster analysis
       - Search for patterns, dependencies, and related code
-      - Verify your understanding before finalizing the plan`,
+      - Verify your understanding before finalizing the plan
+      
+      TRY TO WRAP UP THE PLAN IN 4-5 Tool Calls OR LESS
+      `,
       tools,
       maxSteps: PLAN_GENERATION_CONFIG.maxSteps,
       temperature: PLAN_GENERATION_CONFIG.temperature,
@@ -121,19 +126,7 @@ export const generatePlan = async (
 
     const { object } = await generateObject({
       model: openai.chat("gpt-4.1-mini"),
-      prompt: `Create a structured implementation plan from this analysis:
-
-      ${result.text}
-      
-      Tool usage summary:
-      - Total steps taken: ${result.steps?.length || 0}
-      - Tools called: ${result.toolCalls?.length || 0}
-
-      Generate a precise, actionable plan with:
-      - Specific file paths and line numbers when possible
-      - Clear action items ordered by priority
-      - Minimal changes that preserve existing patterns
-      - All relevant files that need to be modified or reviewed`,
+      prompt: result.text,
       schema: planSchema,
       temperature: 0,
       maxRetries: 2,

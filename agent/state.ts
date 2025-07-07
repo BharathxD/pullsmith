@@ -1,4 +1,4 @@
-import type { Sandbox } from "@vercel/sandbox";
+import { Annotation } from "@langchain/langgraph";
 
 export type FileAction = "modify" | "create" | "delete";
 
@@ -47,39 +47,88 @@ export interface SemanticMatch {
   score: number;
   metadata: Record<string, unknown>;
 }
-
-export interface AgentState {
+export const StateAnnotation = Annotation.Root({
   // Input
-  task: string;
-  repoUrl: string;
-  baseBranch: string;
+  task: Annotation<string>,
+  repoUrl: Annotation<string>,
+  baseBranch: Annotation<string>,
 
   // Indexing stage
-  indexedFiles: IndexedFile[];
-  isVectorDatabaseReady: boolean;
-  merkleRoot: string;
-  previousMerkleRoot?: string;
-  changedFiles: string[];
+  indexedFiles: Annotation<IndexedFile[]>({
+    value: (current, update) => update ?? current,
+    default: () => [],
+  }),
+  isVectorDatabaseReady: Annotation<boolean>({
+    value: (current, update) => update ?? current,
+    default: () => false,
+  }),
+  merkleRoot: Annotation<string>({
+    value: (current, update) => update ?? current,
+    default: () => "",
+  }),
+  previousMerkleRoot: Annotation<string | undefined>,
+  changedFiles: Annotation<string[]>({
+    value: (current, update) => update ?? current,
+    default: () => [],
+  }),
 
   // Planning stage
-  relevantFiles: string[];
-  plan: PlanItem[];
-  semanticMatches: SemanticMatch[];
+  relevantFiles: Annotation<string[]>({
+    value: (current, update) => update ?? current,
+    default: () => [],
+  }),
+  plan: Annotation<PlanItem[]>({
+    value: (current, update) => update ?? current,
+    default: () => [],
+  }),
+  semanticMatches: Annotation<SemanticMatch[]>({
+    value: (current, update) => update ?? current,
+    default: () => [],
+  }),
 
   // Sandbox stage
-  sandboxId: string;
-  isSandboxReady: boolean;
+  sandboxId: Annotation<string>({
+    value: (current, update) => update ?? current,
+    default: () => "",
+  }),
+  isSandboxReady: Annotation<boolean>({
+    value: (current, update) => update ?? current,
+    default: () => false,
+  }),
 
   // Editing stage
-  editedFiles: EditedFile[];
-  isEditingComplete: boolean;
+  editedFiles: Annotation<EditedFile[]>({
+    value: (current, update) => update ?? current,
+    default: () => [],
+  }),
+  isEditingComplete: Annotation<boolean>({
+    value: (current, update) => update ?? current,
+    default: () => false,
+  }),
 
   // Git operations
-  branchName: string;
-  commitHash: string;
-  prUrl: string;
+  branchName: Annotation<string>({
+    value: (current, update) => update ?? current,
+    default: () => "",
+  }),
+  commitHash: Annotation<string>({
+    value: (current, update) => update ?? current,
+    default: () => "",
+  }),
+  prUrl: Annotation<string>({
+    value: (current, update) => update ?? current,
+    default: () => "",
+  }),
 
   // Error handling
-  errors: string[];
-  currentStep: Step;
-}
+  errors: Annotation<string[]>({
+    value: (current, update) => update ?? current,
+    default: () => [],
+  }),
+  currentStep: Annotation<Step>({
+    value: (current, update) => update ?? current,
+    default: () => "indexing_complete" as Step,
+  }),
+});
+
+export type GraphState = typeof StateAnnotation.State;

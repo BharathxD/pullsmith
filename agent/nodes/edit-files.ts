@@ -1,4 +1,6 @@
-import type { AgentState } from "../state";
+import { generateFileChanges } from "@/lib/ai/agents";
+import { Sandbox } from "@vercel/sandbox";
+import type { GraphState } from "../state";
 
 /**
  * EDIT FILES NODE
@@ -6,28 +8,43 @@ import type { AgentState } from "../state";
  * Executes planned changes to code files in Vercel Sandbox
  */
 export const editFiles = async (
-  state: AgentState
-): Promise<Partial<AgentState>> => {
+  state: GraphState
+): Promise<Partial<GraphState>> => {
   console.log(`✏️  Editing ${state.plan.length} files`);
 
   try {
-    // For now, this is a placeholder implementation
-    // In a real implementation, this would:
-    // 1. Sort plan items by priority
-    // 2. For each plan item: read current file, generate new content, apply changes
-    // 3. Validate syntax and basic functionality
-    // 4. Stage all changes using git add
+    const sandbox = await Sandbox.get({ sandboxId: state.sandboxId });
+    const sortedPlan = [...state.plan].sort((a, b) => a.priority - b.priority);
+    const editedFiles = [];
 
-    const mockEditedFiles = state.plan.map((planItem) => ({
-      filePath: planItem.filePath,
-      originalContent: "Original content",
-      newContent: `Modified content for: ${planItem.description}`,
-    }));
+    for (const planItem of sortedPlan) {
+      const originalContent =
+        planItem.action === "create"
+          ? ""
+          : await readFileContent(sandbox, planItem.filePath);
 
-    console.log("✅ File editing complete (placeholder)");
+      const changeResult = await generateFileChanges(
+        planItem,
+        originalContent,
+        state.task,
+        sandbox
+      );
+
+      if (!changeResult.success) {
+        throw new Error(
+          `Failed to generate changes for ${planItem.filePath}: ${changeResult.error}`
+        );
+      }
+
+      editedFiles.push({
+        filePath: planItem.filePath,
+        originalContent,
+        newContent: changeResult.content,
+      });
+    }
 
     return {
-      editedFiles: mockEditedFiles,
+      editedFiles,
       isEditingComplete: true,
       currentStep: "editing_complete",
     };
@@ -43,4 +60,12 @@ export const editFiles = async (
       currentStep: "editing_failed",
     };
   }
+};
+
+const readFileContent = async (
+  sandbox: Sandbox,
+  filePath: string
+): Promise<string> => {
+  const result = await sandbox.runCommand({ cmd: "cat", args: [filePath] });
+  return result.exitCode === 0 ? await result.stdout() : "";
 };

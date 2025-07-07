@@ -93,7 +93,7 @@ const AppSidebarErrorState = () => (
   </div>
 );
 
-const AppSidebarEmptyState = () => (
+export const AppSidebarEmptyState = () => (
   <div className="text-center max-w-sm">
     <GitBranch className="h-12 w-12 text-neutral-300 dark:text-neutral-700 mx-auto mb-4" />
     <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-2">

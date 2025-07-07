@@ -1,16 +1,18 @@
 import {
   bigint,
   index,
-  int,
+  integer,
   json,
-  mysqlTable,
+  pgTable,
   timestamp,
   unique,
   varchar,
-} from "drizzle-orm/mysql-core";
+} from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
 import { timestamps } from "./utils";
+import { agentRuns } from "./agents";
 
-export const repositories = mysqlTable(
+export const repositories = pgTable(
   "repositories",
   {
     id: varchar("id", { length: 255 }).primaryKey(),
@@ -26,7 +28,7 @@ export const repositories = mysqlTable(
   ]
 );
 
-export const merkleTrees = mysqlTable(
+export const merkleTrees = pgTable(
   "merkle_trees",
   {
     id: varchar("id", { length: 255 }).primaryKey(),
@@ -35,7 +37,7 @@ export const merkleTrees = mysqlTable(
       .references(() => repositories.id),
     rootHash: varchar("root_hash", { length: 64 }).notNull(),
     treeStructure: json("tree_structure"),
-    fileCount: int("file_count").notNull().default(0),
+    fileCount: integer("file_count").notNull().default(0),
     ...timestamps,
   },
   (table) => [
@@ -44,14 +46,14 @@ export const merkleTrees = mysqlTable(
   ]
 );
 
-export const fileHashes = mysqlTable(
+export const fileHashes = pgTable(
   "file_hashes",
   {
     id: varchar("id", { length: 255 }).primaryKey(),
     merkleTreeId: varchar("merkle_tree_id", { length: 255 })
       .notNull()
       .references(() => merkleTrees.id),
-    filePath: varchar("file_path", { length: 1024 }).notNull(),
+    filePath: varchar("file_path", { length: 512 }).notNull(),
     fileHash: varchar("file_hash", { length: 64 }).notNull(),
     fileSize: bigint("file_size", { mode: "number" }),
     lastModified: timestamp("last_modified"),
@@ -61,7 +63,27 @@ export const fileHashes = mysqlTable(
     index("idx_merkle_tree").on(table.merkleTreeId),
     // File paths can still be searched via file_hash which is more reliable
     index("idx_file_hashes_hash").on(table.fileHash),
-    // Use file_hash instead of file_path for uniqueness - it's shorter and still ensures uniqueness
-    unique("unique_merkle_tree_file").on(table.merkleTreeId, table.fileHash),
+    // Use file_path instead of file_hash for uniqueness - allows multiple files with same content
+    unique("unique_merkle_tree_file").on(table.merkleTreeId, table.filePath),
   ]
 );
+
+export const repositoriesRelations = relations(repositories, ({ many }) => ({
+  merkleTrees: many(merkleTrees),
+  agentRuns: many(agentRuns),
+}));
+
+export const merkleTreesRelations = relations(merkleTrees, ({ one, many }) => ({
+  repository: one(repositories, {
+    fields: [merkleTrees.repositoryId],
+    references: [repositories.id],
+  }),
+  fileHashes: many(fileHashes),
+}));
+
+export const fileHashesRelations = relations(fileHashes, ({ one }) => ({
+  merkleTree: one(merkleTrees, {
+    fields: [fileHashes.merkleTreeId],
+    references: [merkleTrees.id],
+  }),
+}));

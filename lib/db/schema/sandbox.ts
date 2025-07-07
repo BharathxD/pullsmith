@@ -1,15 +1,16 @@
 import {
   index,
-  int,
+  integer,
   json,
-  mysqlTable,
+  pgTable,
   timestamp,
   varchar,
-} from "drizzle-orm/mysql-core";
+} from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
 import { timestamps } from "./utils";
 import { agentRuns } from "./agents";
 
-export const sandboxInstances = mysqlTable(
+export const sandboxInstances = pgTable(
   "sandbox_instances",
   {
     id: varchar("id", { length: 255 }).primaryKey(),
@@ -18,9 +19,9 @@ export const sandboxInstances = mysqlTable(
       .references(() => agentRuns.id),
     sandboxId: varchar("sandbox_id", { length: 100 }).notNull(),
     runtime: varchar("runtime", { length: 50 }),
-    vcpus: int("vcpus").default(1),
-    memoryMb: int("memory_mb"),
-    timeoutMinutes: int("timeout_minutes").default(5),
+    vcpus: integer("vcpus").default(1),
+    memoryMb: integer("memory_mb"),
+    timeoutMinutes: integer("timeout_minutes").default(5),
     status: varchar("status", { length: 20 }).default("initializing"),
     domain: varchar("domain", { length: 255 }),
     ports: json("ports"), // Array of exposed ports
@@ -32,3 +33,10 @@ export const sandboxInstances = mysqlTable(
     index("idx_sandbox_id").on(table.sandboxId),
   ]
 );
+
+export const sandboxInstancesRelations = relations(sandboxInstances, ({ one }) => ({
+  agentRun: one(agentRuns, {
+    fields: [sandboxInstances.agentRunId],
+    references: [agentRuns.id],
+  }),
+}));

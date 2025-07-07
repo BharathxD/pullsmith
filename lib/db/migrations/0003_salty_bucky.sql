@@ -1,1 +1,0 @@
-DROP INDEX `idx_file_path` ON `file_hashes`;

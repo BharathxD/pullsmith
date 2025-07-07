@@ -9,10 +9,13 @@ const executeCommand = async (
 ) => {
   try {
     const result = await sandbox.runCommand({ cmd, args });
+    const stdout = await result.stdout();
+    const stderr = await result.stderr();
+
     return {
       success: result.exitCode === 0,
-      content: String(result.stdout || ""),
-      error: result.exitCode !== 0 ? `${result.stderr}` : "",
+      content: String(stdout || ""),
+      error: result.exitCode !== 0 ? String(stderr || "") : "",
       exitCode: result.exitCode,
     };
   } catch (error) {
@@ -43,7 +46,15 @@ export const createSandboxTools = (sandbox: Sandbox) => ({
       filePath: z.string().describe("The path to the file to read"),
     }),
     execute: async ({ filePath }) => {
-      const result = await executeCommand(sandbox, "cat", [filePath]);
+      let safeFilePath = filePath;
+      if (
+        !safeFilePath.startsWith("/") &&
+        !safeFilePath.startsWith("./") &&
+        !safeFilePath.startsWith("../")
+      ) {
+        safeFilePath = `./${safeFilePath}`;
+      }
+      const result = await executeCommand(sandbox, "cat", [safeFilePath]);
       return {
         success: result.success,
         content: result.content,
@@ -52,13 +63,111 @@ export const createSandboxTools = (sandbox: Sandbox) => ({
     },
   }),
 
+  writeFile: tool({
+    description: "Write content to a file in the sandbox",
+    parameters: z.object({
+      filePath: z.string(),
+      content: z.string(),
+    }),
+    execute: async ({ filePath, content }) => {
+      console.log("Writing file:", filePath);
+      const result = await executeCommand(sandbox, "bash", [
+        "-c",
+        `cat > "${filePath}" << 'EOF'\n${content}\nEOF`,
+      ]);
+
+      if (!result.success) {
+        console.error("Failed to write file:", result.error);
+      }
+      console.info("File written successfully to sandbox");
+
+      return {
+        success: result.success,
+        content: result.success ? `Written: ${filePath}` : "",
+        error: result.success ? "" : result.error,
+      };
+    },
+  }),
+
+  deleteFile: tool({
+    description: "Delete a file from the sandbox",
+    parameters: z.object({
+      filePath: z.string(),
+    }),
+    execute: async ({ filePath }) => {
+      const result = await executeCommand(sandbox, "rm", ["-f", filePath]);
+      return {
+        success: result.success,
+        content: result.success ? `Deleted: ${filePath}` : "",
+        error: result.success ? "" : result.error,
+      };
+    },
+  }),
+
+  validateFile: tool({
+    description: "Validate file syntax and compilation",
+    parameters: z.object({
+      filePath: z.string(),
+      language: z
+        .enum(["typescript", "javascript", "python", "go", "rust", "auto"])
+        .optional()
+        .default("auto"),
+    }),
+    execute: async ({ filePath, language = "auto" }) => {
+      const ext = filePath.split(".").pop()?.toLowerCase();
+      const lang =
+        language === "auto"
+          ? ext === "ts" || ext === "tsx"
+            ? "typescript"
+            : ext === "js" || ext === "jsx"
+            ? "javascript"
+            : ext === "py"
+            ? "python"
+            : ext === "go"
+            ? "go"
+            : ext === "rs"
+            ? "rust"
+            : "unknown"
+          : language;
+
+      const commands = {
+        typescript: ["node", "--check", filePath],
+        javascript: ["node", "--check", filePath],
+        python: ["python", "-m", "py_compile", filePath],
+        go: ["go", "build", "-o", "/dev/null", filePath],
+        rust: ["rustc", "--emit=dep-info", filePath],
+      };
+
+      const command = commands[lang as keyof typeof commands];
+      if (!command) {
+        return {
+          success: false,
+          content: "",
+          error: `Unsupported language: ${lang}`,
+        };
+      }
+
+      const result = await executeCommand(
+        sandbox,
+        command[0],
+        command.slice(1)
+      );
+      return {
+        success: result.success,
+        content: result.success ? `Valid: ${filePath}` : "",
+        error: result.success ? "" : result.error,
+      };
+    },
+  }),
+
   listDirectory: tool({
     description: "List contents of a directory in the sandbox",
     parameters: z.object({
-      path: z.string().describe("The directory path to list"),
+      path: z.string().describe("The directory path to list").optional(),
     }),
     execute: async ({ path }) => {
-      const result = await executeCommand(sandbox, "ls", ["-la", path]);
+      const targetPath = path || ".";
+      const result = await executeCommand(sandbox, "ls", ["-la", targetPath]);
       return {
         success: result.success,
         content: result.content,
@@ -69,27 +178,22 @@ export const createSandboxTools = (sandbox: Sandbox) => ({
     },
   }),
 
-  getCurrentDirectory: tool({
-    description: "Get the current working directory in the sandbox",
-    parameters: z.object({}),
-    execute: async () => {
-      const result = await executeCommand(sandbox, "pwd");
-      return {
-        success: result.success,
-        content: result.content.trim(),
-        error: result.error,
-      };
-    },
-  }),
-
   findFiles: tool({
     description: "Find files matching a pattern in the sandbox",
     parameters: z.object({
       pattern: z.string().describe("The file pattern to search for"),
-      directory: z.string().optional().default("."),
-      maxResults: z.number().optional().default(100),
+      directory: z
+        .string()
+        .describe("The directory to search in")
+        .optional()
+        .default("."),
+      maxResults: z
+        .number()
+        .describe("Maximum number of results to return")
+        .optional()
+        .default(100),
     }),
-    execute: async ({ pattern, directory, maxResults }) => {
+    execute: async ({ pattern, directory = ".", maxResults = 100 }) => {
       const result = await executeCommand(sandbox, "find", [
         directory,
         "-name",
@@ -114,6 +218,87 @@ export const createSandboxTools = (sandbox: Sandbox) => ({
         success: true,
         content,
         error: truncated ? `Results truncated to ${maxResults} items` : "",
+      };
+    },
+  }),
+
+  searchInFiles: tool({
+    description: "Search for text patterns within files using grep",
+    parameters: z.object({
+      pattern: z.string().describe("The text pattern to search for"),
+      filePattern: z
+        .string()
+        .describe("File pattern to include in search")
+        .optional()
+        .default("*"),
+      directory: z
+        .string()
+        .describe("Directory to search in")
+        .optional()
+        .default("."),
+      maxResults: z
+        .number()
+        .describe("Maximum number of results")
+        .optional()
+        .default(50),
+    }),
+    execute: async ({
+      pattern,
+      filePattern = "*",
+      directory = ".",
+      maxResults = 50,
+    }) => {
+      const args = [
+        "-n",
+        "--color=never",
+        "-r",
+        "-i",
+        `--include=${filePattern}`,
+        "--exclude-dir=node_modules",
+        "--exclude-dir=.git",
+        "--exclude-dir=target",
+        pattern,
+        directory,
+      ];
+
+      const result = await executeCommand(sandbox, "grep", args);
+
+      if (result.exitCode !== 0 && result.exitCode !== 1) {
+        return {
+          success: false,
+          content: "",
+          error: `Search failed: ${result.error}`,
+        };
+      }
+
+      const { content, truncated } = truncateResults(
+        result.content,
+        maxResults
+      );
+      return {
+        success: true,
+        content,
+        error: truncated ? `Results truncated to ${maxResults} items` : "",
+      };
+    },
+  }),
+
+  runCommand: tool({
+    description: "Run a command in the sandbox",
+    parameters: z.object({
+      command: z.string().describe("Command to run"),
+      args: z
+        .array(z.string())
+        .describe("Command arguments")
+        .optional()
+        .default([]),
+    }),
+    execute: async ({ command, args = [] }) => {
+      const result = await executeCommand(sandbox, command, args);
+      return {
+        success: result.success,
+        content: result.content,
+        error: result.error,
       };
     },
   }),
@@ -162,32 +347,30 @@ export const createSandboxTools = (sandbox: Sandbox) => ({
   getProjectStructure: tool({
     description: "Get a tree view of the project structure",
     parameters: z.object({
-      depth: z.number().optional().default(3),
-      showHidden: z.boolean().optional().default(false),
+      depth: z
+        .number()
+        .describe("Maximum depth to traverse")
+        .optional()
+        .default(3),
     }),
-    execute: async ({ depth, showHidden }) => {
-      const args = [
+    execute: async ({ depth = 3 }) => {
+      const result = await executeCommand(sandbox, "find", [
         ".",
         "-type",
-        "d",
+        "f",
         "-maxdepth",
         depth.toString(),
         "-not",
         "-path",
-        "*/node_modules*",
+        "*/node_modules/*",
         "-not",
         "-path",
-        "*/target*",
+        "*/target/*",
         "-not",
         "-path",
-        "*/.git*",
-      ];
+        "*/.git/*",
+      ]);
 
-      if (!showHidden) {
-        args.push("-not", "-path", "*/.*");
-      }
-
-      const result = await executeCommand(sandbox, "find", args);
       return {
         success: result.success,
         content: result.content,
@@ -196,275 +379,17 @@ export const createSandboxTools = (sandbox: Sandbox) => ({
     },
   }),
 
-  searchInFiles: tool({
-    description: "Search for text patterns within files using grep",
-    parameters: z.object({
-      pattern: z.string(),
-      filePattern: z.string().optional().default("*"),
-      directory: z.string().optional().default("."),
-      recursive: z.boolean().optional().default(true),
-      maxResults: z.number().optional().default(50),
-      caseSensitive: z.boolean().optional().default(false),
-    }),
-    execute: async ({
-      pattern,
-      filePattern,
-      directory,
-      recursive,
-      maxResults,
-      caseSensitive,
-    }) => {
-      const args = [
-        "-n",
-        "--color=never",
-        ...(recursive ? ["-r"] : []),
-        ...(!caseSensitive ? ["-i"] : []),
-        `--include=${filePattern}`,
-        "--exclude-dir=node_modules",
-        "--exclude-dir=.git",
-        "--exclude-dir=target",
-        pattern,
-        directory,
-      ];
-
-      const result = await executeCommand(sandbox, "grep", args);
-
-      if (result.exitCode !== 0 && result.exitCode !== 1) {
-        return {
-          success: false,
-          content: "",
-          error: `Search failed: ${result.error}`,
-        };
-      }
-
-      const { content, truncated } = truncateResults(
-        result.content,
-        maxResults
-      );
-      return {
-        success: true,
-        content,
-        error: truncated ? `Results truncated to ${maxResults} items` : "",
-      };
-    },
-  }),
-
-  findSymbolDefinitions: tool({
-    description:
-      "Find where symbols (functions, classes, variables) are defined using advanced patterns",
-    parameters: z.object({
-      symbol: z.string(),
-      fileTypes: z
-        .array(z.string())
-        .optional()
-        .default(["js", "ts", "py", "go", "rs"]),
-      language: z
-        .enum(["javascript", "typescript", "python", "go", "rust", "all"])
-        .optional()
-        .default("all"),
-    }),
-    execute: async ({ symbol, fileTypes, language }) => {
-      const patterns = {
-        javascript: [
-          `function\\s+${symbol}\\s*\\(`,
-          `const\\s+${symbol}\\s*=`,
-          `let\\s+${symbol}\\s*=`,
-          `var\\s+${symbol}\\s*=`,
-          `class\\s+${symbol}\\s*{`,
-          `${symbol}\\s*:\\s*function`,
-          `${symbol}\\s*:\\s*\\(`,
-        ],
-        typescript: [
-          `function\\s+${symbol}\\s*\\(`,
-          `const\\s+${symbol}\\s*=`,
-          `let\\s+${symbol}\\s*=`,
-          `interface\\s+${symbol}\\s*{`,
-          `type\\s+${symbol}\\s*=`,
-          `class\\s+${symbol}\\s*{`,
-          `enum\\s+${symbol}\\s*{`,
-        ],
-        python: [
-          `def\\s+${symbol}\\s*\\(`,
-          `class\\s+${symbol}\\s*\\(`,
-          `class\\s+${symbol}\\s*:`,
-          `${symbol}\\s*=`,
-        ],
-        go: [
-          `func\\s+${symbol}\\s*\\(`,
-          `type\\s+${symbol}\\s+struct`,
-          `type\\s+${symbol}\\s+interface`,
-          `var\\s+${symbol}\\s`,
-        ],
-        rust: [
-          `fn\\s+${symbol}\\s*\\(`,
-          `struct\\s+${symbol}\\s*{`,
-          `enum\\s+${symbol}\\s*{`,
-          `trait\\s+${symbol}\\s*{`,
-          `let\\s+${symbol}\\s*=`,
-        ],
-      };
-
-      const searchPatterns =
-        language === "all"
-          ? Object.values(patterns).flat()
-          : patterns[language as keyof typeof patterns] || [];
-
-      const results = await Promise.all(
-        searchPatterns.map(async (pattern) => {
-          const args = [
-            "-n",
-            "--color=never",
-            "-r",
-            "-E",
-            ...fileTypes.map((ext) => `--include=*.${ext}`),
-            "--exclude-dir=node_modules",
-            "--exclude-dir=.git",
-            pattern,
-            ".",
-          ];
-
-          const result = await executeCommand(sandbox, "grep", args);
-          return result.exitCode === 0 && result.content
-            ? `Pattern: ${pattern}\n${result.content}`
-            : null;
-        })
-      );
-
-      const content = results.filter(Boolean).join("\n---\n");
-      return {
-        success: true,
-        content: content || "No symbol definitions found",
-        error: "",
-      };
-    },
-  }),
-
-  findSymbolUsages: tool({
-    description: "Find where symbols are used/imported across the codebase",
-    parameters: z.object({
-      symbol: z.string(),
-      fileTypes: z
-        .array(z.string())
-        .optional()
-        .default(["js", "ts", "py", "go", "rs"]),
-      excludeDefinitions: z.boolean().optional().default(false),
-      maxResults: z.number().optional().default(100),
-    }),
-    execute: async ({ symbol, fileTypes, excludeDefinitions, maxResults }) => {
-      const args = [
-        "-n",
-        "--color=never",
-        "-r",
-        ...fileTypes.map((ext) => `--include=*.${ext}`),
-        "--exclude-dir=node_modules",
-        "--exclude-dir=.git",
-        "--exclude-dir=target",
-      ];
-
-      if (excludeDefinitions) {
-        args.push(
-          "-v",
-          "-E",
-          `(function\\s+${symbol}\\s*\\(|const\\s+${symbol}\\s*=|class\\s+${symbol}\\s*\\{|def\\s+${symbol}\\s*\\()`
-        );
-      }
-
-      args.push(symbol, ".");
-
-      const result = await executeCommand(sandbox, "grep", args);
-
-      if (result.exitCode !== 0 && result.exitCode !== 1) {
-        return {
-          success: false,
-          content: "",
-          error: `Symbol search failed: ${result.error}`,
-        };
-      }
-
-      const { content, truncated } = truncateResults(
-        result.content,
-        maxResults
-      );
-      return {
-        success: true,
-        content: content || "No symbol usages found",
-        error: truncated ? `Results truncated to ${maxResults} items` : "",
-      };
-    },
-  }),
-
-  analyzeImports: tool({
-    description: "Analyze import/export patterns in the codebase",
-    parameters: z.object({
-      fileTypes: z.array(z.string()).optional().default(["js", "ts"]),
-      includeExports: z.boolean().optional().default(true),
-      maxResults: z.number().optional().default(50),
-    }),
-    execute: async ({ fileTypes, includeExports, maxResults }) => {
-      const importPatterns = [
-        "^import\\s+.*\\s+from",
-        "^import\\s*\\{.*\\}\\s+from",
-        "^import\\s+\\*\\s+as.*from",
-        "^import\\s*\\(.*\\)",
-        "^const\\s+.*=\\s*require\\s*\\(",
-        "^const\\s+\\{.*\\}\\s*=\\s*require\\s*\\(",
-      ];
-
-      const exportPatterns = [
-        "^export\\s+.*\\s+from",
-        "^export\\s*\\{.*\\}",
-        "^export\\s+default",
-        "^export\\s+const",
-        "^export\\s+function",
-        "^export\\s+class",
-        "^module\\.exports",
-      ];
-
-      const patterns = includeExports
-        ? [...importPatterns, ...exportPatterns]
-        : importPatterns;
-
-      const results = await Promise.all(
-        patterns.map(async (pattern) => {
-          const args = [
-            "-n",
-            "--color=never",
-            "-r",
-            "-E",
-            ...fileTypes.map((ext) => `--include=*.${ext}`),
-            "--exclude-dir=node_modules",
-            "--exclude-dir=.git",
-            "--exclude-dir=target",
-            pattern,
-            ".",
-          ];
-
-          const result = await executeCommand(sandbox, "grep", args);
-          if (result.exitCode === 0 && result.content) {
-            const { content } = truncateResults(result.content, maxResults);
-            return `Pattern: ${pattern}\n${content}`;
-          }
-          return null;
-        })
-      );
-
-      const content = results.filter(Boolean).join("\n---\n");
-      return {
-        success: true,
-        content: content || "No import/export patterns found",
-        error: "",
-      };
-    },
-  }),
-
   readMultipleFiles: tool({
     description: "Read multiple files efficiently to understand patterns",
     parameters: z.object({
-      filePaths: z.array(z.string()),
-      maxLines: z.number().optional().default(100),
-      includeLineNumbers: z.boolean().optional().default(false),
+      filePaths: z.array(z.string()).describe("Array of file paths to read"),
+      maxLines: z
+        .number()
+        .describe("Maximum lines to read per file")
+        .optional()
+        .default(100),
     }),
-    execute: async ({ filePaths, maxLines, includeLineNumbers }) => {
+    execute: async ({ filePaths, maxLines = 100 }) => {
       const maxFiles = 10;
       const files = filePaths.slice(0, maxFiles);
 
@@ -474,18 +399,15 @@ export const createSandboxTools = (sandbox: Sandbox) => ({
             "-f",
             filePath,
           ]);
-
           if (checkResult.exitCode !== 0) {
             return `=== ${filePath} ===\nError: File not found`;
           }
 
-          const args = ["-n", maxLines.toString()];
-          if (includeLineNumbers) {
-            args.push("-n");
-          }
-          args.push(filePath);
-
-          const result = await executeCommand(sandbox, "head", args);
+          const result = await executeCommand(sandbox, "head", [
+            "-n",
+            maxLines.toString(),
+            filePath,
+          ]);
           return `=== ${filePath} ===\n${
             result.exitCode === 0 ? result.content : `Error: ${result.error}`
           }`;
@@ -501,19 +423,32 @@ export const createSandboxTools = (sandbox: Sandbox) => ({
     },
   }),
 
+  getCurrentDirectory: tool({
+    description: "Get the current working directory in the sandbox",
+    parameters: z.object({}),
+    execute: async () => {
+      const result = await executeCommand(sandbox, "pwd");
+      return {
+        success: result.success,
+        content: result.content.trim(),
+        error: result.error,
+      };
+    },
+  }),
+
   getGitInfo: tool({
     description: "Get git information about the repository",
     parameters: z.object({
-      type: z.enum([
-        "status",
-        "recent-commits",
-        "branches",
-        "files-changed",
-        "log",
-      ]),
-      limit: z.number().optional().default(10),
+      type: z
+        .enum(["status", "recent-commits", "branches", "files-changed", "log"])
+        .describe("Type of git information to retrieve"),
+      limit: z
+        .number()
+        .describe("Limit for results that support it")
+        .optional()
+        .default(10),
     }),
-    execute: async ({ type, limit }) => {
+    execute: async ({ type, limit = 10 }) => {
       const commands = {
         status: ["status", "--porcelain"],
         "recent-commits": ["log", "--oneline", `-${limit}`],
@@ -529,29 +464,6 @@ export const createSandboxTools = (sandbox: Sandbox) => ({
         success: result.success,
         content: result.content,
         error: result.success ? "" : `Git command failed: ${result.error}`,
-      };
-    },
-  }),
-
-  checkCommandAvailability: tool({
-    description: "Check if specific commands are available in the sandbox",
-    parameters: z.object({
-      commands: z.array(z.string()),
-    }),
-    execute: async ({ commands }) => {
-      const results = await Promise.all(
-        commands.map(async (command) => {
-          const result = await executeCommand(sandbox, "which", [command]);
-          return result.exitCode === 0
-            ? `${command}: Available at ${result.content.trim()}`
-            : `${command}: Not available`;
-        })
-      );
-
-      return {
-        success: true,
-        content: results.join("\n"),
-        error: "",
       };
     },
   }),

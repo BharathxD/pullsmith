@@ -14,7 +14,7 @@ type HealthResponse = {
   timestamp: string;
   services: {
     redis: ServiceStatus;
-    mysql: ServiceStatus;
+    postgresql: ServiceStatus;
   };
 };
 
@@ -41,20 +41,20 @@ const testService = async (
 
 export const healthRouter = router({
   health: publicProcedure.query(async (): Promise<HealthResponse> => {
-    const [redisStatus, mysqlStatus] = await Promise.all([
+    const [redisStatus, postgresqlStatus] = await Promise.all([
       testService("Redis", () => redis.ping()),
-      testService("MySQL", () => db.execute(sql`SELECT 1`)),
+      testService("PostgreSQL", () => db.execute(sql`SELECT 1`)),
     ]);
 
     const hasErrors =
-      redisStatus.status === "error" || mysqlStatus.status === "error";
+      redisStatus.status === "error" || postgresqlStatus.status === "error";
 
     return {
       status: hasErrors ? "error" : "ok",
       timestamp: new Date().toISOString(),
       services: {
         redis: redisStatus,
-        mysql: mysqlStatus,
+        postgresql: postgresqlStatus,
       },
     };
   }),

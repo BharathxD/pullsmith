@@ -1,7 +1,8 @@
 import { generatePlan } from "@/lib/ai/agents";
-import type { AgentState } from "../state";
+import type { GraphState } from "../state";
 import { Sandbox } from "@vercel/sandbox";
 import { semanticSearch } from "@/lib/db/vector/utils";
+import { getRepositoryId } from "@/lib/db/indexing";
 
 /**
  * PLAN CHANGES NODE
@@ -9,19 +10,18 @@ import { semanticSearch } from "@/lib/db/vector/utils";
  * Analyzes task and creates implementation plan using semantic search
  */
 export const planChanges = async (
-  state: AgentState
-): Promise<Partial<AgentState>> => {
+  state: GraphState
+): Promise<Partial<GraphState>> => {
   try {
     const sandbox = await Sandbox.get({ sandboxId: state.sandboxId });
 
-    if (!state.indexedFiles?.length) {
-      throw new Error("No indexed files available for planning");
+    if (!state.isVectorDatabaseReady) {
+      throw new Error("Vector database is not ready for planning");
     }
 
-    const repositoryId = state.indexedFiles[0].chunks?.[0]?.metadata
-      ?.repositoryId as string;
+    const repositoryId = await getRepositoryId(state.repoUrl, state.baseBranch);
     if (!repositoryId) {
-      throw new Error("No repository ID found in indexed files");
+      throw new Error("Repository not found in database");
     }
 
     const semanticMatches = await semanticSearch(

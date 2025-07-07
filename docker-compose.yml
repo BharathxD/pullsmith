@@ -2,38 +2,22 @@
 # This is meant for local development only. Do not use this in production.
 
 services:
-  pullsmith-mysql:
-    image: mysql:8.0
-    restart: always
-    environment:
-      MYSQL_DATABASE: planetscale
-      MYSQL_ROOT_HOST: "%"
-      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
-    command:
-      [
-        "--max_connections=1000",
-        "--default-authentication-plugin=mysql_native_password",
-      ]
-    ports:
-      - 3306:3306
+  postgres:
+    image: postgres:17
+    command: "-d 1"
     volumes:
-      - pullsmith-mysql:/var/lib/mysql
-
-  planetscale-proxy:
-    image: ghcr.io/mattrobenolt/ps-http-sim:latest
-    command:
-      [
-        "-mysql-no-pass",
-        "-listen-port=3900",
-        "-mysql-dbname=planetscale",
-        "-mysql-addr=pullsmith-mysql",
-      ]
-    depends_on:
-      - pullsmith-mysql
+      - pullsmith_db:/var/lib/postgresql/data
     ports:
-      - 3900:3900
-    links:
-      - pullsmith-mysql
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=main
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis/redis-stack-server:6.2.6-v6
@@ -59,6 +43,16 @@ services:
       redis:
         condition: service_healthy
 
+  neon-proxy:
+    image: ghcr.io/timowilhelm/local-neon-http-proxy:main
+    environment:
+      - PG_CONNECTION_STRING=postgres://postgres:postgres@postgres:5432/main
+    ports:
+      - "4444:4444"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   qdrant:
     image: qdrant/qdrant:latest
     restart: always
@@ -78,6 +72,6 @@ services:
       start_period: 10s
 
 volumes:
-  pullsmith-mysql:
+  pullsmith_db:
   pullsmith_redis:
   qdrant_storage:

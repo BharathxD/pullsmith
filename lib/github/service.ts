@@ -1,15 +1,15 @@
 import { env } from "@/env";
-import { App } from "@octokit/app";
+import { createAppAuth } from "@octokit/auth-app";
 import { Octokit } from "@octokit/rest";
 import { account } from "@/lib/db/schema/auth";
 import db from "@/lib/db";
 import { eq } from "drizzle-orm";
 
 export class GitHubService {
-  private readonly app: App;
+  private readonly appAuth: ReturnType<typeof createAppAuth>;
 
   constructor() {
-    this.app = new App({
+    this.appAuth = createAppAuth({
       appId: env.GITHUB_APP_ID,
       privateKey: env.GITHUB_APP_PRIVATE_KEY,
     });
@@ -238,32 +238,36 @@ export class GitHubService {
     try {
       // Get all installations for the user
       const installations = await this.getUserInstallations(userId);
-      
+
       // Get repositories from all installations
       const allRepositories = await Promise.all(
         installations.map(async (installation) => {
           try {
-            const repos = await this.getInstallationRepositories(userId, installation.id);
-            return repos.map(repo => ({
+            const repos = await this.getInstallationRepositories(
+              userId,
+              installation.id
+            );
+            return repos.map((repo) => ({
               ...repo,
               installation_id: installation.id,
               account: installation.account,
             }));
           } catch (error) {
-            console.error(`Error fetching repos for installation ${installation.id}:`, error);
+            console.error(
+              `Error fetching repos for installation ${installation.id}:`,
+              error
+            );
             return [];
           }
         })
       );
 
       // Flatten the array and sort by updated_at
-      return allRepositories
-        .flat()
-        .sort((a, b) => {
-          const dateA = new Date(a.updated_at || 0);
-          const dateB = new Date(b.updated_at || 0);
-          return dateB.getTime() - dateA.getTime();
-        });
+      return allRepositories.flat().sort((a, b) => {
+        const dateA = new Date(a.updated_at || 0);
+        const dateB = new Date(b.updated_at || 0);
+        return dateB.getTime() - dateA.getTime();
+      });
     } catch (error) {
       console.error("Error fetching all repositories:", error);
       throw new Error("Failed to fetch all repositories");
@@ -276,11 +280,11 @@ export class GitHubService {
     try {
       const [repoResponse, commitsResponse] = await Promise.all([
         octokit.rest.repos.get({ owner, repo }),
-        octokit.rest.repos.listCommits({ 
-          owner, 
-          repo, 
-          per_page: 5 
-        })
+        octokit.rest.repos.listCommits({
+          owner,
+          repo,
+          per_page: 5,
+        }),
       ]);
 
       const repository = repoResponse.data;
@@ -310,7 +314,7 @@ export class GitHubService {
           avatar_url: repository.owner.avatar_url,
           type: repository.owner.type,
         },
-        recent_commits: commits.map(commit => ({
+        recent_commits: commits.map((commit) => ({
           sha: commit.sha,
           message: commit.commit.message,
           author: {
@@ -324,7 +328,7 @@ export class GitHubService {
             date: commit.commit.committer?.date,
           },
           html_url: commit.html_url,
-        }))
+        })),
       };
     } catch (error) {
       console.error("Error fetching repository details:", error);
@@ -334,25 +338,39 @@ export class GitHubService {
 
   async getInstallationAccessToken(repoUrl: string): Promise<string> {
     const { owner, repo } = this.parseRepositoryUrl(repoUrl);
-    
+
     try {
-      // Get repository installation using the app's main octokit instance
-      const { data: installation } = await this.app.octokit.request('GET /repos/{owner}/{repo}/installation', {
-        owner,
-        repo,
-      });
+      // Get repository installation using the app auth
+      const { token } = await this.appAuth({ type: "app" });
+
+      // Use the app token to get installation info
+      const appOctokit = new Octokit({ auth: token });
+      const { data: installation } =
+        await appOctokit.rest.apps.getRepoInstallation({
+          owner,
+          repo,
+        });
 
       // Get installation access token
-      const installationOctokit = await this.app.getInstallationOctokit(installation.id);
-      const auth = await installationOctokit.auth() as { token: string };
-      return auth.token;
+      const { token: installationToken } = await this.appAuth({
+        type: "installation",
+        installationId: installation.id,
+      });
+
+      return installationToken;
     } catch (error) {
-      throw new Error(`Failed to get installation access token for ${owner}/${repo}: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Failed to get installation access token for ${owner}/${repo}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     }
   }
 
   private parseRepositoryUrl(repoUrl: string): { owner: string; repo: string } {
-    const match = repoUrl.match(/github\.com[\/:]([^\/]+)\/([^\/]+?)(?:\.git)?$/);
+    const match = repoUrl.match(
+      /github\.com[\/:]([^\/]+)\/([^\/]+?)(?:\.git)?$/
+    );
     if (!match) {
       throw new Error(`Invalid repository URL: ${repoUrl}`);
     }
