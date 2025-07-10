@@ -4,7 +4,7 @@ Pullsmith is an AI-powered coding assistant that automates code changes and pull
 
 ## Demo
 
-![Pullsmith Demo](https://cloud.imbharath.com/pullsmith.gif)
+![pullsmith_compressed](https://github.com/user-attachments/assets/6abee4d0-70f0-4ed8-940a-5be9f86ba10d)
 
 [Watch the full demo](https://cloud.imbharath.com/pullsmith.mp4)
 
